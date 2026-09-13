@@ -1,0 +1,1671 @@
+/* ==========================================================================
+   病房簽床床位管理系統 (Bed Analyzer & Assignment GUI) - 現代化樣式庫
+   ========================================================================== */
+
+:root {
+  --font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft JhengHei UI", "Noto Sans TC", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+
+  /* 主題色系 (預設淺色模式) */
+  --bg-app: #f1f5f9;
+  --bg-card: #ffffff;
+  --bg-surface: #ffffff;
+  --bg-subtle: #f8fafc;
+  --border-color: #cbd5e1;
+  --border-light: #e2e8f0;
+  --text-main: #0f172a;
+  --text-muted: #475569;
+  --text-dim: #94a3b8;
+
+  /* 醫療專業主色 */
+  --primary: #0284c7;
+  --primary-hover: #0369a1;
+  --primary-light: #e0f2fe;
+  --primary-dark: #0c4a6e;
+
+  --accent-teal: #0d9488;
+  --accent-teal-hover: #0f766e;
+  --accent-teal-light: #ccfbf1;
+
+  --accent-purple: #7c3aed;
+  --accent-purple-hover: #6d28d9;
+  --accent-purple-light: #ede9fe;
+
+  --danger: #dc2626;
+  --danger-hover: #b91c1c;
+  --danger-light: #fee2e2;
+
+  --warning: #ea580c;
+  --warning-hover: #c2410c;
+  --warning-light: #ffedd5;
+
+  --success: #16a34a;
+  --success-hover: #15803d;
+  --success-light: #dcfce7;
+
+  /* 病房專屬識別色彩 */
+  --ward-121-badge: #ff9000;
+  --ward-121-bg: #fff7ed;
+  --ward-121-border: #fdba74;
+  --ward-121-stat: #fed7aa;
+  --ward-121-fg: #7c2d12;
+
+  --ward-122-badge: #d97706;
+  --ward-122-bg: #fdfbf7;
+  --ward-122-border: #e2d3c1;
+  --ward-122-stat: #f5eedf;
+  --ward-122-fg: #5c3c15;
+
+  --ward-113-badge: #eab308;
+  --ward-113-bg: #fefce8;
+  --ward-113-border: #facc15;
+  --ward-113-stat: #fef08a;
+  --ward-113-fg: #713f12;
+
+  --ward-124-badge: #22c55e;
+  --ward-124-bg: #f0fdf4;
+  --ward-124-border: #86efac;
+  --ward-124-stat: #bbf7d0;
+  --ward-124-fg: #14532d;
+
+  /* 陰影與圓角 */
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1);
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-full: 9999px;
+  --transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* 深色模式變數 */
+[data-theme="dark"] {
+  --bg-app: #0f172a;
+  --bg-card: #1e293b;
+  --bg-surface: #1e293b;
+  --bg-subtle: #334155;
+  --border-color: #475569;
+  --border-light: #334155;
+  --text-main: #f8fafc;
+  --text-muted: #cbd5e1;
+  --text-dim: #64748b;
+
+  --primary-light: rgba(2, 132, 199, 0.2);
+  --accent-teal-light: rgba(13, 148, 136, 0.2);
+  --accent-purple-light: rgba(124, 58, 237, 0.2);
+  --danger-light: rgba(220, 38, 38, 0.2);
+  --warning-light: rgba(234, 88, 12, 0.2);
+  --success-light: rgba(22, 163, 74, 0.2);
+
+  --ward-121-bg: #2d1808;
+  --ward-121-border: #7c2d12;
+  --ward-121-stat: #431407;
+  --ward-121-fg: #fed7aa;
+
+  --ward-122-bg: #25201a;
+  --ward-122-border: #5c3c15;
+  --ward-122-stat: #38281b;
+  --ward-122-fg: #f5eedf;
+
+  --ward-113-bg: #2b2505;
+  --ward-113-border: #713f12;
+  --ward-113-stat: #422006;
+  --ward-113-fg: #fef08a;
+
+  --ward-124-bg: #092615;
+  --ward-124-border: #14532d;
+  --ward-124-stat: #052e16;
+  --ward-124-fg: #bbf7d0;
+}
+
+/* 全域重設 */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: var(--font-family);
+  background-color: var(--bg-app);
+  color: var(--text-main);
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  line-height: 1.5;
+  font-size: 13px;
+  overflow-x: hidden;
+}
+
+/* ==========================================================================
+   頂部 Header
+   ========================================================================== */
+.app-header {
+  background: linear-gradient(135deg, #1e3a8a 0%, #1e40af 50%, #0369a1 100%);
+  color: #ffffff;
+  padding: 8px 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  box-shadow: var(--shadow-md);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
+.brand-section {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.brand-icon {
+  font-size: 24px;
+  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.2));
+}
+
+.brand-title {
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.brand-version-badge {
+  background: rgba(255, 255, 255, 0.2);
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.brand-status {
+  font-size: 11px;
+  color: #93c5fd;
+  margin-top: 1px;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* ==========================================================================
+   分頁標籤導航 (Tabs)
+   ========================================================================== */
+.tab-nav {
+  display: flex;
+  background-color: var(--bg-card);
+  border-bottom: 1px solid var(--border-color);
+  padding: 0 14px;
+  gap: 4px;
+  overflow-x: auto;
+}
+
+.tab-btn {
+  background: none;
+  border: none;
+  border-bottom: 3px solid transparent;
+  padding: 10px 14px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: var(--transition);
+  white-space: nowrap;
+}
+
+.tab-btn:hover {
+  color: var(--primary);
+  background-color: var(--bg-subtle);
+}
+
+.tab-btn.active {
+  color: var(--primary);
+  border-bottom-color: var(--primary);
+  background-color: var(--bg-card);
+}
+
+/* ==========================================================================
+   主視圖容器
+   ========================================================================== */
+.main-content {
+  flex: 1;
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 1920px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+.tab-pane {
+  display: none;
+  flex: 1;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.tab-pane.active {
+  display: flex;
+}
+
+/* ==========================================================================
+   Young V 設定卡片
+   ========================================================================== */
+.young-v-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 8px 14px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  box-shadow: var(--shadow-sm);
+  flex-wrap: wrap;
+}
+
+.young-v-label {
+  font-weight: 700;
+  color: #1e3a8a;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+[data-theme="dark"] .young-v-label {
+  color: #60a5fa;
+}
+
+.young-v-input {
+  width: 250px;
+  padding: 5px 8px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  background: var(--bg-card);
+  color: var(--text-main);
+  transition: var(--transition);
+}
+
+.young-v-input:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.15);
+}
+
+.young-v-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+/* ==========================================================================
+   病房床位與即時名單雙欄分割佈局
+   ========================================================================== */
+.main-split-container {
+  display: grid;
+  grid-template-columns: 820px 1fr;
+  gap: 12px;
+  align-items: stretch;
+  flex: 1;
+}
+
+@media (max-width: 1360px) {
+  .main-split-container {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* 左側病房床位輸入面板 */
+.ward-cards-container {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ward-card {
+  border-radius: var(--radius-md);
+  border: 1px solid;
+  padding: 8px 10px;
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  transition: var(--transition);
+}
+
+.ward-card:hover {
+  box-shadow: var(--shadow-md);
+}
+
+.ward-card.ward-121 {
+  background-color: var(--ward-121-bg);
+  border-color: var(--ward-121-border);
+  color: var(--ward-121-fg);
+}
+.ward-card.ward-122 {
+  background-color: var(--ward-122-bg);
+  border-color: var(--ward-122-border);
+  color: var(--ward-122-fg);
+}
+.ward-card.ward-113, .ward-card.ward-123 {
+  background-color: var(--ward-113-bg);
+  border-color: var(--ward-113-border);
+  color: var(--ward-113-fg);
+}
+.ward-card.ward-124 {
+  background-color: var(--ward-124-bg);
+  border-color: var(--ward-124-border);
+  color: var(--ward-124-fg);
+}
+
+.ward-card-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.ward-badge {
+  width: 54px;
+  height: 44px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  font-weight: 800;
+  color: #000000;
+  letter-spacing: -0.02em;
+  box-shadow: var(--shadow-sm);
+  flex-shrink: 0;
+}
+
+.ward-card.ward-121 .ward-badge { background-color: var(--ward-121-badge); }
+.ward-card.ward-122 .ward-badge { background-color: var(--ward-122-badge); }
+.ward-card.ward-113 .ward-badge, .ward-card.ward-123 .ward-badge { background-color: var(--ward-113-badge); }
+.ward-card.ward-124 .ward-badge { background-color: var(--ward-124-badge); }
+
+.ward-input-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px 10px;
+  flex: 1;
+}
+
+.category-input-group {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.category-label {
+  font-size: 12px;
+  font-weight: 700;
+  width: 34px;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+.category-label.reserve {
+  color: #b45309;
+}
+
+/* 雙層床位輸入框 (外層包裝 + 底層文字背景高亮層 + 頂層透明輸入層) */
+.bed-input-wrapper {
+  position: relative;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  background-color: #ffffff;
+  overflow: hidden;
+  height: 28px;
+  box-sizing: border-box;
+  cursor: text;
+  transition: var(--transition);
+}
+
+[data-theme="dark"] .bed-input-wrapper {
+  background-color: #0f172a;
+  border-color: #475569;
+}
+
+.bed-input-wrapper:focus-within {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px rgba(2, 132, 199, 0.2);
+}
+
+.bed-input-backdrop {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 4px 6px;
+  margin: 0;
+  border: none;
+  font-size: 12px;
+  font-family: Consolas, "Courier New", monospace, var(--font-mono);
+  line-height: 18px;
+  white-space: pre;
+  overflow: hidden;
+  pointer-events: none;
+  box-sizing: border-box;
+  display: block;
+  z-index: 1;
+  color: #1e293b;
+  letter-spacing: 0;
+  word-spacing: 0;
+  text-align: left;
+  scrollbar-width: none;
+}
+
+.bed-input-backdrop::-webkit-scrollbar {
+  display: none;
+}
+
+[data-theme="dark"] .bed-input-backdrop {
+  color: #f8fafc;
+}
+
+.ward-input-grid .bed-input {
+  position: relative;
+  z-index: 2;
+  width: 100%;
+  height: 100%;
+  border: none !important;
+  outline: none !important;
+  padding: 4px 6px;
+  margin: 0;
+  font-size: 12px;
+  font-family: Consolas, "Courier New", monospace, var(--font-mono);
+  font-weight: 700; /* 與 .bed-hl 一致字重，確保字元寬度 100% 精準對齊無位移 */
+  line-height: 18px;
+  letter-spacing: 0;
+  word-spacing: 0;
+  text-align: left;
+  background: transparent !important;
+  color: transparent !important;
+  cursor: text !important;
+  caret-color: #000000 !important; /* 數標維持黑色，黑色游標在淺天藍背景上 100% 清晰可見 */
+  box-shadow: none !important;
+  box-sizing: border-box;
+}
+
+[data-theme="dark"] .ward-input-grid .bed-input {
+  caret-color: #f8fafc !important; /* 暗黑模式下游標為白色 */
+}
+
+.ward-input-grid .bed-input::placeholder {
+  color: #94a3b8 !important;
+}
+
+.ward-input-grid .bed-input::selection {
+  background: rgba(186, 230, 253, 0.5) !important; /* 柔和淺天藍選取反白 */
+  color: transparent !important;
+}
+
+/* 預設通用 input 樣式 (供篩選器、dialog 等非病房網格使用) */
+.bed-input {
+  flex: 1;
+  padding: 4px 6px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  background-color: #ffffff;
+  color: #1e293b;
+  font-family: var(--font-mono);
+  transition: var(--transition);
+}
+
+[data-theme="dark"] .bed-input {
+  background-color: #0f172a;
+  color: #f8fafc;
+  border-color: #475569;
+}
+
+.bed-input:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px rgba(2, 132, 199, 0.2);
+}
+
+/* 床位數字背景高亮標記 (嚴格 1:1 字符對齊，無多餘 padding 與 margin，位置與輸入字串完全一致) */
+.bed-hl {
+  display: inline;
+  padding: 1px 0;
+  margin: 0;
+  border-radius: 2px;
+  font-size: 12px;
+  font-family: inherit;
+  line-height: inherit;
+  letter-spacing: inherit;
+  word-spacing: inherit;
+  font-weight: 700;
+  box-sizing: border-box;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+
+.bed-hl.occ-m {
+  background-color: #bae6fd !important; /* 更柔和淺天藍色 (#bae6fd)，有人住的床位底色更淡，黑色數字與黑色游標完全不被遮擋 */
+  color: #0f172a !important; /* 深黑字體，與黑色數標維持清晰對比 */
+  font-weight: 700;
+}
+
+.bed-hl.occ-f {
+  background-color: #dc2626 !important;
+  color: #ffffff !important;
+}
+
+.bed-hl.occ-other {
+  background-color: #10b981 !important;
+  color: #ffffff !important;
+}
+
+.bed-hl.occ-normal {
+  background-color: transparent !important;
+  color: #1e293b;
+  font-weight: 400;
+}
+
+[data-theme="dark"] .bed-hl.occ-normal,
+[data-theme="dark"] .bed-hl-text {
+  color: #f8fafc;
+}
+
+.bed-hl-text {
+  display: inline;
+  padding: 0;
+  margin: 0;
+  font-family: inherit;
+  line-height: inherit;
+  letter-spacing: inherit;
+  word-spacing: inherit;
+  color: #1e293b;
+  white-space: pre;
+}
+
+/* 儲存格就地雙擊直接編輯樣式 (Excel 內嵌模式) */
+.cell-inline-editor {
+  width: 100%;
+  height: 100%;
+  min-height: 26px;
+  padding: 2px 5px;
+  font-size: 12px;
+  font-family: inherit;
+  font-weight: 600;
+  border: 2px solid var(--primary) !important;
+  border-radius: var(--radius-sm);
+  background-color: var(--bg-card) !important;
+  color: var(--text-main) !important;
+  outline: none !important;
+  box-sizing: border-box;
+  box-shadow: 0 0 0 2px rgba(2, 132, 199, 0.25);
+}
+
+.editable-cell {
+  cursor: pointer;
+  position: relative;
+  transition: background-color 0.15s ease;
+}
+
+.editable-cell:hover {
+  outline: 1px dashed var(--primary);
+  outline-offset: -1px;
+}
+
+.ward-stats-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.stat-pill {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  background: rgba(255, 255, 255, 0.75);
+  white-space: nowrap;
+}
+
+/* 床位晶片標籤列 (Bed Chips) */
+.bed-chips-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  padding-top: 3px;
+  border-top: 1px dashed rgba(0, 0, 0, 0.12);
+}
+
+.bed-chip {
+  padding: 1px 6px;
+  font-size: 11px;
+  border-radius: var(--radius-full);
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid;
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.bed-chip.vacant {
+  background: #ffffff;
+  border-color: #cbd5e1;
+  color: #334155;
+}
+[data-theme="dark"] .bed-chip.vacant {
+  background: #1e293b;
+  border-color: #475569;
+  color: #cbd5e1;
+}
+
+.bed-chip.occupied {
+  background: #dcfce7;
+  border-color: #86efac;
+  color: #14532d;
+  font-weight: 700;
+}
+[data-theme="dark"] .bed-chip.occupied {
+  background: rgba(22, 163, 74, 0.3);
+  border-color: #15803d;
+  color: #86efac;
+}
+
+.bed-chip.occupied-male {
+  background: #60a5fa !important;
+  border-color: #3b82f6 !important;
+  color: #ffffff !important;
+  font-weight: 700;
+}
+[data-theme="dark"] .bed-chip.occupied-male {
+  background: #1d4ed8 !important;
+  border-color: #3b82f6 !important;
+  color: #ffffff !important;
+}
+
+.bed-chip.occupied-female {
+  background: #e11d48 !important;
+  border-color: #be123c !important;
+  color: #ffffff !important;
+  font-weight: 700;
+}
+[data-theme="dark"] .bed-chip.occupied-female {
+  background: #be123c !important;
+  border-color: #f43f5e !important;
+  color: #ffffff !important;
+}
+
+.bed-chip.on-leave {
+  border-color: #f59e0b;
+  color: #b45309;
+}
+
+/* ==========================================================================
+   右側即時病人面板
+   ========================================================================== */
+.live-patients-panel {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.panel-header {
+  background: var(--bg-subtle);
+  border-bottom: 1px solid var(--border-color);
+  padding: 8px 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.panel-title {
+  font-size: 13px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.panel-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* 快速操作按鈕工具列 */
+.main-operations-toolbar {
+  padding: 6px 10px;
+  background-color: var(--bg-subtle);
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+/* ==========================================================================
+   四大排床方案欄位與獨立複製按鈕容器
+   ========================================================================== */
+.scheme-th {
+  text-align: center;
+  vertical-align: top;
+  padding: 4px 6px !important;
+  background: #f8fafc;
+  border-right: 1px solid var(--border-color);
+  min-width: 100px;
+}
+
+.scheme-th.active-scheme {
+  background: #eff6ff !important;
+  border-top: 3px solid var(--primary);
+}
+
+.scheme-copy-btn {
+  width: 100%;
+  padding: 2px 4px;
+  font-size: 11px;
+  font-weight: 700;
+  background-color: #0284c7;
+  color: #ffffff;
+  border: 1px solid #0369a1;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  margin-bottom: 3px;
+  transition: var(--transition);
+}
+.scheme-copy-btn:hover {
+  background-color: #0369a1;
+}
+
+.scheme-title-clickable {
+  cursor: pointer;
+  display: block;
+  font-weight: 700;
+  font-size: 12px;
+  color: var(--text-main);
+  padding: 2px 4px;
+  border-radius: var(--radius-sm);
+  transition: var(--transition);
+}
+.scheme-title-clickable:hover {
+  background: rgba(2, 132, 199, 0.1);
+  color: var(--primary);
+}
+
+.scheme-th.active-scheme .scheme-title-clickable {
+  color: #0284c7;
+  font-weight: 800;
+}
+
+/* 排床結果儲存格樣式 (靠左對齊) */
+.scheme-cell {
+  text-align: left;
+  font-size: 12px;
+  border-right: 1px solid var(--border-light);
+  padding: 5px 8px !important;
+}
+
+.scheme-cell.active-col {
+  box-shadow: inset 1px 0 0 #0284c7, inset -1px 0 0 #0284c7;
+  font-weight: 700;
+}
+
+.scheme-cell.assigned {
+  background-color: #ecfdf5;
+  color: #065f46;
+  font-weight: 700;
+}
+[data-theme="dark"] .scheme-cell.assigned {
+  background-color: rgba(22, 163, 74, 0.25);
+  color: #86efac;
+}
+
+.scheme-cell.delayed {
+  background-color: #fffbeb;
+  color: #92400e;
+  font-weight: 500;
+}
+[data-theme="dark"] .scheme-cell.delayed {
+  background-color: rgba(234, 88, 12, 0.2);
+  color: #fed7aa;
+}
+
+.scheme-cell.delayed-ontime {
+  background-color: #fecaca;
+  color: #991b1b;
+  font-weight: 700;
+}
+[data-theme="dark"] .scheme-cell.delayed-ontime {
+  background-color: rgba(220, 38, 38, 0.3);
+  color: #fca5a5;
+}
+
+.btn-sort-active {
+  background-color: #f59e0b !important;
+  color: #ffffff !important;
+  border-color: #d97706 !important;
+  font-weight: 700 !important;
+}
+
+/* 醫師配床整合表格與篩選膠囊 */
+.doctor-ward-pills {
+  display: inline-flex;
+  gap: 4px;
+  background: var(--bg-subtle);
+  padding: 3px 5px;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--border-color);
+}
+
+.pill-btn {
+  border: none;
+  background: transparent;
+  padding: 2px 10px;
+  border-radius: var(--radius-full);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.pill-btn:hover {
+  color: var(--primary);
+  background: rgba(2, 132, 199, 0.08);
+}
+
+.pill-btn.active {
+  background: var(--primary);
+  color: #ffffff;
+  box-shadow: var(--shadow-sm);
+}
+
+.doctor-unified-table {
+  table-layout: fixed;
+  width: 100%;
+}
+
+.doctor-unified-table th,
+.doctor-unified-table td {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: middle;
+  padding: 7px 8px;
+}
+
+.doctor-unified-table tr.is-young-v td {
+  background-color: #f0fdf4;
+}
+[data-theme="dark"] .doctor-unified-table tr.is-young-v td {
+  background-color: rgba(34, 197, 94, 0.1);
+}
+
+/* 醫師配床請假代理儲存格底色 (黃色: 有請假資料 / 紅色: 當天有請假) */
+.cell-leave-today {
+  background-color: #fee2e2 !important;
+  color: #991b1b !important;
+  font-weight: 600;
+}
+
+.cell-leave-scheduled {
+  background-color: #fef3c7 !important;
+  color: #92400e !important;
+  font-weight: 600;
+}
+
+[data-theme="dark"] .cell-leave-today {
+  background-color: rgba(239, 68, 68, 0.28) !important;
+  color: #fca5a5 !important;
+}
+
+[data-theme="dark"] .cell-leave-scheduled {
+  background-color: rgba(245, 158, 11, 0.28) !important;
+  color: #fde68a !important;
+}
+
+/* ==========================================================================
+   通用表格樣式
+   ========================================================================== */
+.table-responsive {
+  flex: 1;
+  overflow: auto;
+  position: relative;
+}
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  text-align: left;
+}
+
+.data-table th {
+  background: var(--bg-subtle);
+  color: var(--text-muted);
+  font-weight: 700;
+  padding: 6px 8px;
+  border-bottom: 2px solid var(--border-color);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  white-space: nowrap;
+}
+
+.data-table td {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border-light);
+  white-space: nowrap;
+}
+
+.data-table tr:hover td {
+  background-color: rgba(2, 132, 199, 0.05);
+}
+
+.data-table tr.selected td {
+  background-color: rgba(2, 132, 199, 0.12);
+}
+
+/* 狀態徽章 */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 6px;
+  border-radius: var(--radius-full);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.badge-assigned {
+  background-color: var(--success-light);
+  color: #14532d;
+  border: 1px solid rgba(22, 163, 74, 0.3);
+}
+[data-theme="dark"] .badge-assigned {
+  color: #86efac;
+}
+
+.badge-pending {
+  background-color: var(--warning-light);
+  color: #7c2d12;
+  border: 1px solid rgba(234, 88, 12, 0.3);
+}
+[data-theme="dark"] .badge-pending {
+  color: #fdba74;
+}
+
+.badge-delayed {
+  background-color: var(--danger-light);
+  color: #7f1d1d;
+  border: 1px solid rgba(220, 38, 38, 0.3);
+}
+[data-theme="dark"] .badge-delayed {
+  color: #fca5a5;
+}
+
+.badge-vip {
+  background-color: var(--accent-purple-light);
+  color: #4c1d95;
+  border: 1px solid rgba(124, 58, 237, 0.3);
+}
+[data-theme="dark"] .badge-vip {
+  color: #c4b5fd;
+}
+
+/* ==========================================================================
+   按鈕樣式庫
+   ========================================================================== */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 5px 10px;
+  border-radius: var(--radius-sm);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: var(--transition);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.btn:active {
+  transform: translateY(1px);
+}
+
+.btn-primary {
+  background-color: var(--primary);
+  color: #ffffff;
+  border-color: #0284c7;
+  box-shadow: 0 1px 2px rgba(2, 132, 199, 0.3);
+}
+.btn-primary:hover {
+  background-color: var(--primary-hover);
+}
+
+.btn-teal {
+  background-color: var(--accent-teal);
+  color: #ffffff;
+  border-color: #0d9488;
+}
+.btn-teal:hover {
+  background-color: var(--accent-teal-hover);
+}
+
+.btn-purple {
+  background-color: var(--accent-purple);
+  color: #ffffff;
+}
+.btn-purple:hover {
+  background-color: var(--accent-purple-hover);
+}
+
+.btn-orange {
+  background-color: var(--warning);
+  color: #ffffff;
+}
+.btn-orange:hover {
+  background-color: var(--warning-hover);
+}
+
+.btn-danger {
+  background-color: var(--danger);
+  color: #ffffff;
+}
+.btn-danger:hover {
+  background-color: var(--danger-hover);
+}
+
+.btn-reset-config {
+  background-color: #be123c;
+  color: #ffffff;
+}
+.btn-reset-config:hover {
+  background-color: #9f1239;
+}
+
+.btn-reset-patients {
+  background-color: #0e7490;
+  color: #ffffff;
+}
+.btn-reset-patients:hover {
+  background-color: #155e75;
+}
+
+.btn-secondary {
+  background-color: var(--bg-card);
+  color: var(--text-main);
+  border-color: var(--border-color);
+}
+.btn-secondary:hover {
+  background-color: var(--bg-subtle);
+}
+
+.btn-sm {
+  padding: 3px 6px;
+  font-size: 11px;
+}
+
+.btn-lg {
+  padding: 7px 14px;
+  font-size: 13px;
+}
+
+/* ==========================================================================
+   底層狀態列 (Status Bar)
+   ========================================================================== */
+.app-statusbar {
+  background: var(--bg-card);
+  border-top: 1px solid var(--border-color);
+  padding: 5px 14px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.status-stats {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.status-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.status-item strong {
+  color: var(--text-main);
+}
+
+/* ==========================================================================
+   模態視窗 (Modals)
+   ========================================================================== */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.6);
+  backdrop-filter: blur(4px);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 16px;
+}
+
+.modal-backdrop.show {
+  display: flex;
+  animation: fadeIn 0.15s ease-out;
+}
+
+.modal-dialog {
+  background: var(--bg-card);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  border: 1px solid var(--border-color);
+  width: 100%;
+  max-width: 760px;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: slideDown 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.modal-dialog.modal-xl {
+  max-width: 1100px;
+}
+
+.modal-header {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: var(--bg-subtle);
+}
+
+.modal-title {
+  font-size: 15px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.modal-close-btn {
+  background: none;
+  border: none;
+  font-size: 20px;
+  line-height: 1;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: var(--radius-sm);
+}
+.modal-close-btn:hover {
+  color: var(--danger);
+  background-color: var(--danger-light);
+}
+
+.modal-body {
+  padding: 16px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.modal-footer {
+  padding: 10px 16px;
+  border-top: 1px solid var(--border-color);
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  background: var(--bg-subtle);
+}
+
+/* 方案選擇卡片網格 */
+.strategies-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+}
+
+@media (max-width: 768px) {
+  .strategies-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.strategy-card {
+  border: 2px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 12px;
+  background: var(--bg-card);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.strategy-card:hover {
+  border-color: var(--primary);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+
+.strategy-card.selected {
+  border-color: var(--primary);
+  background-color: var(--primary-light);
+}
+
+.strategy-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.strategy-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+.strategy-badge {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: var(--radius-full);
+  background: #fef08a;
+  color: #713f12;
+  white-space: nowrap;
+}
+
+.strategy-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 6px;
+  font-size: 12px;
+  background: var(--bg-subtle);
+  padding: 8px;
+  border-radius: var(--radius-sm);
+}
+
+.metric-item {
+  display: flex;
+  justify-content: space-between;
+}
+
+.metric-value {
+  font-weight: 700;
+}
+
+/* ==========================================================================
+   Toast 通知
+   ========================================================================== */
+.toast-container {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  z-index: 2000;
+  pointer-events: none;
+}
+
+.toast {
+  pointer-events: auto;
+  background: #1e293b;
+  color: #ffffff;
+  padding: 10px 14px;
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 280px;
+  max-width: 440px;
+  font-size: 12px;
+  animation: toastIn 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  border-left: 4px solid var(--primary);
+}
+
+.toast.success { border-left-color: var(--success); }
+.toast.warning { border-left-color: var(--warning); }
+.toast.error { border-left-color: var(--danger); }
+
+/* 動畫 */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideDown {
+  from { opacity: 0; transform: translateY(-12px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes toastIn {
+  from { opacity: 0; transform: translateX(20px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+/* 隱藏原生檔案輸入框 */
+.hidden-file-input {
+  display: none !important;
+}
+
+/* ==========================================================================
+   方案 1~4 滑鼠懸停浮動說明方框 (Hover ToolTip)
+   ========================================================================== */
+.scheme-hover-tooltip {
+  position: fixed;
+  z-index: 99999;
+  max-width: 380px;
+  min-width: 290px;
+  padding: 12px 14px;
+  border-radius: var(--radius-md);
+  background: #0f172a;
+  color: #f8fafc;
+  border: 1px solid #38bdf8;
+  box-shadow: 0 10px 30px -5px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(56, 189, 248, 0.2);
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.15s ease, visibility 0.15s ease;
+  font-size: 12px;
+  line-height: 1.5;
+  backdrop-filter: blur(8px);
+}
+
+.scheme-hover-tooltip.show {
+  opacity: 1;
+  visibility: visible;
+}
+
+.scheme-tooltip-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.scheme-tooltip-badge {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  white-space: nowrap;
+}
+
+.scheme-tooltip-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.scheme-tooltip-desc {
+  font-size: 12px;
+  color: #94a3b8;
+  margin-bottom: 8px;
+  line-height: 1.4;
+}
+
+.scheme-tooltip-rules {
+  margin: 0 0 8px 0;
+  padding-left: 18px;
+  color: #cbd5e1;
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.scheme-tooltip-rules li {
+  margin-bottom: 2px;
+}
+
+.scheme-tooltip-tip {
+  font-size: 11px;
+  color: #38bdf8;
+  font-weight: 600;
+  border-top: 1px dashed rgba(255, 255, 255, 0.1);
+  padding-top: 6px;
+}
+
+/* ==========================================================================
+   系統規則與房價資訊 (Rules Tab)
+   ========================================================================== */
+.rules-container {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.rules-hero {
+  background: linear-gradient(135deg, rgba(2, 132, 199, 0.08) 0%, rgba(124, 58, 237, 0.08) 100%);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 16px 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.rules-hero h2 {
+  font-size: 18px;
+  font-weight: 700;
+  margin: 0 0 4px 0;
+  color: var(--primary);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.rules-hero p {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.rules-section-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 16px 20px;
+  box-shadow: var(--shadow-sm);
+}
+
+.rules-section-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-main);
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border-light);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.scheme-overview-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 14px;
+}
+
+.scheme-card {
+  background: var(--bg-subtle);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.scheme-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+
+.scheme-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 6px;
+}
+
+.scheme-card-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+.scheme-card-badge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 12px;
+  color: #ffffff;
+}
+
+.scheme-card-body {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.6;
+}
+
+.scheme-card-list {
+  margin: 4px 0 0 0;
+  padding-left: 18px;
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.6;
+}
+
+.scheme-card-list li {
+  margin-bottom: 3px;
+}
+
+.rules-detailed-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.rule-item-box {
+  background: var(--bg-subtle);
+  border: 1px solid var(--border-light);
+  border-left: 4px solid var(--primary);
+  border-radius: var(--radius-sm);
+  padding: 12px 16px;
+  transition: background 0.15s ease;
+}
+
+.rule-item-box:hover {
+  background: var(--bg-card);
+}
+
+.rule-item-box:nth-child(even) {
+  border-left-color: var(--accent-purple);
+}
+
+.rule-item-box.alert-rule {
+  border-left-color: var(--warning);
+}
+
+.rule-item-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.rule-number-badge {
+  background: var(--primary-light);
+  color: var(--primary-dark);
+  font-weight: 700;
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  white-space: nowrap;
+}
+
+.rule-item-title {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+.rule-item-content {
+  font-size: 12.5px;
+  color: var(--text-muted);
+  line-height: 1.65;
+}
+
+.rule-item-content ul {
+  margin: 4px 0 0 0;
+  padding-left: 20px;
+}
+
+.rule-item-content li {
+  margin-bottom: 3px;
+}
+
+.pricing-table, .ext-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+
+.pricing-table th, .pricing-table td,
+.ext-table th, .ext-table td {
+  padding: 8px 12px;
+  border: 1px solid var(--border-color);
+  text-align: left;
+}
+
+.pricing-table th, .ext-table th {
+  background: var(--bg-subtle);
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+

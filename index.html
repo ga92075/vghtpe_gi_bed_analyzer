@@ -1,0 +1,738 @@
+<!DOCTYPE html>
+<html lang="zh-TW" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>🏥 病房簽床床位管理系統 (Bed Analyzer Web)</title>
+  <link rel="stylesheet" href="css/styles.css">
+  <!-- 離線外部解析庫：優先載入本機 JSZip (Word docx XML 解析) & SheetJS (Excel xlsx 解析)，附帶 CDN 備援 -->
+  <script src="js/jszip.min.js"></script>
+  <script src="js/xlsx.full.min.js"></script>
+  <script>
+    if (typeof JSZip === 'undefined') {
+      document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"><\/script>');
+    }
+    if (typeof XLSX === 'undefined') {
+      document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"><\/script>');
+    }
+  </script>
+</head>
+<body>
+
+  <!-- 隱藏檔案上傳標籤 -->
+  <input type="file" id="file-docx" class="hidden-file-input" accept=".docx">
+  <input type="file" id="file-excel" class="hidden-file-input" accept=".xlsx,.xls">
+  <input type="file" id="file-config" class="hidden-file-input" accept=".json">
+
+  <!-- 頂部 Header -->
+  <header class="app-header">
+    <div class="brand-section">
+      <span class="brand-icon">🏥</span>
+      <div>
+        <div class="brand-title">
+          病房簽床床位管理系統
+          <span class="brand-version-badge" id="app-version-badge">單機免伺服器版</span>
+        </div>
+        <div class="brand-status" id="doc-status-lbl">尚未載入 Word 與 Excel 檔案</div>
+      </div>
+    </div>
+    <div class="header-actions">
+      <button class="btn btn-primary" id="btn-import-docx" title="動態解析 Word 檔之醫師、配床、請假代理">📂 導入床位word</button>
+      <button class="btn btn-secondary" id="btn-export-config" title="匯出共用設定檔 bed_config.json (包含 Word 醫師配床與規則，絕無病人個資，可供備份或分享至其他電腦)">💾 匯出設定檔</button>
+      <button class="btn btn-secondary" id="btn-import-config" title="匯入 bed_config.json 設定檔 (可還原其他電腦匯出的醫師與排床規則)">📂 匯入設定檔</button>
+      <button class="btn btn-teal" id="btn-reload-excel" title="重新讀取今日 Excel 檔">🔄 更新本日名單</button>
+      <button class="btn btn-secondary" id="btn-import-excel" title="選取新的 Excel 檔">📊 導入Excel檔...</button>
+      <button class="btn btn-teal" id="btn-import-clipboard" title="由 Excel 或 Sheets 複製後點此匯入，或在網頁任何地方直接按 Ctrl+V 瞬間免授權貼上">📋 貼上/匯入病人 (Ctrl+V)</button>
+      <button class="btn btn-secondary" id="btn-theme-toggle" title="切換深色/淺色主題" style="padding: 6px 10px; font-size: 15px;">🌙</button>
+    </div>
+  </header>
+
+  <!-- 分頁導航 (Tabs) -->
+  <nav class="tab-nav">
+    <button class="tab-btn active" data-tab="main">📝 各病房床位輸入 (主畫面)</button>
+    <button class="tab-btn" data-tab="patients">📋 本日入院病人名單</button>
+    <button class="tab-btn" data-tab="overview">🛏️ 床位比對與預覽總覽</button>
+    <button class="tab-btn" data-tab="doctors">👨‍⚕️ 醫師配床與請假總覽</button>
+    <button class="tab-btn" data-tab="rules">ℹ️ 系統規則與房價資訊</button>
+  </nav>
+
+  <!-- 主內容視窗 -->
+  <main class="main-content">
+
+    <!-- 分頁 1: 主畫面 (各病房輸入與即時名單) -->
+    <section class="tab-pane active" id="pane-main">
+      <!-- Young V 醫師燈號設定卡片 -->
+      <div class="young-v-card">
+        <label class="young-v-label" for="young-v-input">
+          <span>🧑‍⚕️</span> Young V 醫師燈號 (適合收急診):
+        </label>
+        <input type="text" id="young-v-input" class="young-v-input" placeholder="例如: 6410 1657 6254 6382 1729 1678">
+        <span class="young-v-hint">(請輸入年輕主治醫師燈號，多位請用空白或逗號分隔，排床時優選收治急診病人)</span>
+      </div>
+
+      <!-- 左右分割容器 -->
+      <div class="main-split-container">
+        <!-- 左側：113~124 病房輸入卡片容器 -->
+        <div class="ward-cards-container">
+          <!-- 113 病房 -->
+          <div class="ward-card ward-113">
+            <div class="ward-card-header">
+              <div class="ward-badge">113</div>
+              <div class="ward-input-grid">
+                <div class="category-input-group">
+                  <label class="category-label" for="input-113-男2">男2</label>
+                  <input type="text" id="input-113-男2" class="bed-input">
+                </div>
+                <div class="category-input-group">
+                  <label class="category-label" for="input-113-女2">女2</label>
+                  <input type="text" id="input-113-女2" class="bed-input">
+                </div>
+                <div class="category-input-group">
+                  <label class="category-label" for="input-113-雙空">雙空</label>
+                  <input type="text" id="input-113-雙空" class="bed-input">
+                </div>
+
+                <div class="category-input-group">
+                  <label class="category-label" for="input-113-男4">男4</label>
+                  <input type="text" id="input-113-男4" class="bed-input">
+                </div>
+                <div class="category-input-group">
+                  <label class="category-label" for="input-113-女4">女4</label>
+                  <input type="text" id="input-113-女4" class="bed-input">
+                </div>
+                <div class="ward-stats-row">
+                  <span class="stat-pill" id="count-113">合計: 0 床</span>
+                  <span class="stat-pill" id="occupied-113">有人住: 0 床</span>
+                  <button class="btn btn-secondary btn-sm" id="btn-clear-113">🗑️ 清空</button>
+                </div>
+
+                <div class="category-input-group">
+                  <label class="category-label" for="input-113-隔離">隔離</label>
+                  <input type="text" id="input-113-隔離" class="bed-input">
+                </div>
+                <div class="category-input-group">
+                  <label class="category-label" for="input-113-單人">單人</label>
+                  <input type="text" id="input-113-單人" class="bed-input">
+                </div>
+                <div class="category-input-group">
+                  <label class="category-label reserve" for="input-113-留床">留床</label>
+                  <input type="text" id="input-113-留床" class="bed-input" placeholder="不排床">
+                </div>
+              </div>
+            </div>
+            <div class="bed-chips-container" id="chips-113"></div>
+          </div>
+
+          <!-- 121 病房 -->
+          <div class="ward-card ward-121">
+            <div class="ward-card-header">
+              <div class="ward-badge">121</div>
+              <div class="ward-input-grid">
+                <div class="category-input-group">
+                  <label class="category-label" for="input-121-男2">男2</label>
+                  <input type="text" id="input-121-男2" class="bed-input">
+                </div>
+                <div class="category-input-group">
+                  <label class="category-label" for="input-121-女2">女2</label>
+                  <input type="text" id="input-121-女2" class="bed-input">
+                </div>
+                <div class="category-input-group">
+                  <label class="category-label" for="input-121-雙空">雙空</label>
+                  <input type="text" id="input-121-雙空" class="bed-input">
+                </div>
+
+                <div class="category-input-group">
+                  <label class="category-label" for="input-121-男4">男4</label>
+                  <input type="text" id="input-121-男4" class="bed-input">
+                </div>
+                <div class="category-input-group">
+                  <label class="category-label" for="input-121-女4">女4</label>
+                  <input type="text" id="input-121-女4" class="bed-input">
+                </div>
+                <div class="ward-stats-row">
+                  <span class="stat-pill" id="count-121">合計: 0 床</span>
+                  <span class="stat-pill" id="occupied-121">有人住: 0 床</span>
+                  <button class="btn btn-secondary btn-sm" id="btn-clear-121">🗑️ 清空</button>
+                </div>
+
+                <div class="category-input-group">
+                  <label class="category-label" for="input-121-隔離">隔離</label>
+                  <input type="text" id="input-121-隔離" class="bed-input">
+                </div>
+                <div class="category-input-group">
+                  <label class="category-label" for="input-121-單人">單人</label>
+                  <input type="text" id="input-121-單人" class="bed-input">
+                </div>
+                <div class="category-input-group">
+                  <label class="category-label reserve" for="input-121-留床">留床</label>
+                  <input type="text" id="input-121-留床" class="bed-input" placeholder="不排床">
+                </div>
+              </div>
+            </div>
+            <div class="bed-chips-container" id="chips-121"></div>
+          </div>
+
+          <!-- 122 病房 -->
+          <div class="ward-card ward-122">
+            <div class="ward-card-header">
+              <div class="ward-badge">122</div>
+              <div class="ward-input-grid">
+                <div class="category-input-group">
+                  <label class="category-label" for="input-122-男2">男2</label>
+                  <input type="text" id="input-122-男2" class="bed-input">
+                </div>
+                <div class="category-input-group">
+                  <label class="category-label" for="input-122-女2">女2</label>
+                  <input type="text" id="input-122-女2" class="bed-input">
+                </div>
+                <div class="category-input-group">
+                  <label class="category-label" for="input-122-雙空">雙空</label>
+                  <input type="text" id="input-122-雙空" class="bed-input">
+                </div>
+
+                <div class="category-input-group">
+                  <label class="category-label" for="input-122-男4">男4</label>
+                  <input type="text" id="input-122-男4" class="bed-input">
+                </div>
+                <div class="category-input-group">
+                  <label class="category-label" for="input-122-女4">女4</label>
+                  <input type="text" id="input-122-女4" class="bed-input">
+                </div>
+                <div class="ward-stats-row">
+                  <span class="stat-pill" id="count-122">合計: 0 床</span>
+                  <span class="stat-pill" id="occupied-122">有人住: 0 床</span>
+                  <button class="btn btn-secondary btn-sm" id="btn-clear-122">🗑️ 清空</button>
+                </div>
+
+                <div class="category-input-group">
+                  <label class="category-label" for="input-122-隔離">隔離</label>
+                  <input type="text" id="input-122-隔離" class="bed-input">
+                </div>
+                <div class="category-input-group">
+                  <label class="category-label" for="input-122-單人">單人</label>
+                  <input type="text" id="input-122-單人" class="bed-input">
+                </div>
+                <div class="category-input-group">
+                  <label class="category-label reserve" for="input-122-留床">留床</label>
+                  <input type="text" id="input-122-留床" class="bed-input" placeholder="不排床">
+                </div>
+              </div>
+            </div>
+            <div class="bed-chips-container" id="chips-122"></div>
+          </div>
+
+          <!-- 123 病房 -->
+          <div class="ward-card ward-123">
+            <div class="ward-card-header">
+              <div class="ward-badge">123</div>
+              <div class="ward-input-grid">
+                <div class="category-input-group">
+                  <label class="category-label" for="input-123-男2">男2</label>
+                  <input type="text" id="input-123-男2" class="bed-input">
+                </div>
+                <div class="category-input-group">
+                  <label class="category-label" for="input-123-女2">女2</label>
+                  <input type="text" id="input-123-女2" class="bed-input">
+                </div>
+                <div class="category-input-group">
+                  <label class="category-label" for="input-123-雙空">雙空</label>
+                  <input type="text" id="input-123-雙空" class="bed-input">
+                </div>
+
+                <div class="category-input-group">
+                  <label class="category-label" for="input-123-男4">男4</label>
+                  <input type="text" id="input-123-男4" class="bed-input">
+                </div>
+                <div class="category-input-group">
+                  <label class="category-label" for="input-123-女4">女4</label>
+                  <input type="text" id="input-123-女4" class="bed-input">
+                </div>
+                <div class="ward-stats-row">
+                  <span class="stat-pill" id="count-123">合計: 0 床</span>
+                  <span class="stat-pill" id="occupied-123">有人住: 0 床</span>
+                  <button class="btn btn-secondary btn-sm" id="btn-clear-123">🗑️ 清空</button>
+                </div>
+
+                <div class="category-input-group">
+                  <label class="category-label" for="input-123-隔離">隔離</label>
+                  <input type="text" id="input-123-隔離" class="bed-input">
+                </div>
+                <div class="category-input-group">
+                  <label class="category-label" for="input-123-單人">單人</label>
+                  <input type="text" id="input-123-單人" class="bed-input">
+                </div>
+                <div class="category-input-group">
+                  <label class="category-label reserve" for="input-123-留床">留床</label>
+                  <input type="text" id="input-123-留床" class="bed-input" placeholder="不排床">
+                </div>
+              </div>
+            </div>
+            <div class="bed-chips-container" id="chips-123"></div>
+          </div>
+
+          <!-- 124 病房 -->
+          <div class="ward-card ward-124">
+            <div class="ward-card-header">
+              <div class="ward-badge">124</div>
+              <div class="ward-input-grid">
+                <div class="category-input-group">
+                  <label class="category-label" for="input-124-男2">男2</label>
+                  <input type="text" id="input-124-男2" class="bed-input">
+                </div>
+                <div class="category-input-group">
+                  <label class="category-label" for="input-124-女2">女2</label>
+                  <input type="text" id="input-124-女2" class="bed-input">
+                </div>
+                <div class="category-input-group">
+                  <label class="category-label" for="input-124-雙空">雙空</label>
+                  <input type="text" id="input-124-雙空" class="bed-input">
+                </div>
+
+                <div class="category-input-group">
+                  <label class="category-label" for="input-124-男4">男4</label>
+                  <input type="text" id="input-124-男4" class="bed-input">
+                </div>
+                <div class="category-input-group">
+                  <label class="category-label" for="input-124-女4">女4</label>
+                  <input type="text" id="input-124-女4" class="bed-input">
+                </div>
+                <div class="ward-stats-row">
+                  <span class="stat-pill" id="count-124">合計: 0 床</span>
+                  <span class="stat-pill" id="occupied-124">有人住: 0 床</span>
+                  <button class="btn btn-secondary btn-sm" id="btn-clear-124">🗑️ 清空</button>
+                </div>
+
+                <div class="category-input-group">
+                  <label class="category-label" for="input-124-隔離">隔離</label>
+                  <input type="text" id="input-124-隔離" class="bed-input">
+                </div>
+                <div class="category-input-group">
+                  <label class="category-label" for="input-124-單人">單人</label>
+                  <input type="text" id="input-124-單人" class="bed-input">
+                </div>
+                <div class="category-input-group">
+                  <label class="category-label reserve" for="input-124-留床">留床</label>
+                  <input type="text" id="input-124-留床" class="bed-input" placeholder="不排床">
+                </div>
+              </div>
+            </div>
+            <div class="bed-chips-container" id="chips-124"></div>
+          </div>
+        </div>
+
+        <!-- 右側：即時本日入院病人名單與操控面板 -->
+        <div class="live-patients-panel">
+          <div class="panel-header">
+            <div class="panel-title">
+              <span>📋</span> 本日入院病人名單 (即時狀態)
+              <span id="lbl-applied-strategy" style="font-size: 12px; font-weight: 700; color: #0284c7; margin-left: 8px;">各病房床位顯示中: 【方案 1 (原本排法/基準)】</span>
+            </div>
+            <div class="panel-actions">
+              <button class="btn btn-secondary btn-sm" id="btn-rt-sort-bed" title="切換是否依床位順序 (113➔124) 排序">↕️ 依床位排序 (113➔124)</button>
+              <button class="btn btn-reset-config btn-sm" id="btn-rt-reset" title="復原至上一筆操作（可復原自動排床或手動修改，Ctrl+Z）">↩ 上一步</button>
+              <button class="btn btn-reset-config btn-sm" id="btn-rt-redo" title="重做至下一步操作（Ctrl+Y）">↪ 下一步</button>
+              <button class="btn btn-primary" id="btn-auto-assign">⚡ 自動排床</button>
+            </div>
+          </div>
+
+          <!-- 快速按鈕列 -->
+          <div class="main-operations-toolbar">
+            <button class="btn btn-teal btn-sm" id="btn-fill-test-beds" title="以 bed_config.json 填入各病房測試用床位 (可按上一步復原)">🧪 測試用床位</button>
+            <button class="btn btn-reset-config btn-sm" id="btn-reset-config">↺ 恢復原始設定</button>
+            <button class="btn btn-secondary btn-sm" id="btn-clear-all-beds">🗑️ 清空所有床位</button>
+            <button class="btn btn-purple btn-sm" id="btn-export-prompt">🤖 複製 AI 簽床 Prompt</button>
+            <button class="btn btn-orange btn-sm" id="btn-export-excel">📊 匯出 Excel</button>
+            <button class="btn btn-secondary btn-sm" id="btn-copy-summary">📋 複製名單摘要</button>
+            <button class="btn btn-secondary btn-sm" id="btn-clear-patient-cache" onclick="window.app.clearLocalPatientData()" title="換班或公用電腦安全清除此瀏覽器暫存之病人資料">🔒 清除暫存</button>
+          </div>
+
+          <!-- 即時病人清單表格：四大方案全面呈現 + 獨立複製按鈕 -->
+          <div class="table-responsive">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th style="width: 38px; text-align: center;">#</th>
+                  <th class="scheme-th active-scheme" id="th-scheme-1" style="width: 105px;">
+                    <button class="scheme-copy-btn" onclick="window.app.copyStatusBedColumn(1)" title="以換行分隔直向複製全體病人之「排床1」結果至剪貼簿">📋 複製</button>
+                    <span class="scheme-title-clickable" onclick="window.app.selectBedSchemeColumn(1)" title="點擊切換左側病房為此方案">排床1</span>
+                  </th>
+                  <th class="scheme-th" id="th-scheme-2" style="width: 105px;">
+                    <button class="scheme-copy-btn" onclick="window.app.copyStatusBedColumn(2)" title="以換行分隔直向複製全體病人之「排床2」結果至剪貼簿">📋 複製</button>
+                    <span class="scheme-title-clickable" onclick="window.app.selectBedSchemeColumn(2)" title="點擊切換左側病房為此方案">排床2</span>
+                  </th>
+                  <th class="scheme-th" id="th-scheme-3" style="width: 105px;">
+                    <button class="scheme-copy-btn" onclick="window.app.copyStatusBedColumn(3)" title="以換行分隔直向複製全體病人之「排床3」結果至剪貼簿">📋 複製</button>
+                    <span class="scheme-title-clickable" onclick="window.app.selectBedSchemeColumn(3)" title="點擊切換左側病房為此方案">排床3</span>
+                  </th>
+                  <th class="scheme-th" id="th-scheme-4" style="width: 105px;">
+                    <button class="scheme-copy-btn" onclick="window.app.copyStatusBedColumn(4)" title="以換行分隔直向複製全體病人之「排床4」結果至剪貼簿">📋 複製</button>
+                    <span class="scheme-title-clickable" onclick="window.app.selectBedSchemeColumn(4)" title="點擊切換左側病房為此方案">排床4</span>
+                  </th>
+                  <th style="width: 75px; text-align: center;">姓名</th>
+                  <th style="width: 45px; text-align: center;">性別</th>
+                  <th style="width: 65px; text-align: center;">燈號</th>
+                  <th style="width: 95px;">房型意願</th>
+                  <th style="width: 95px;">校正後意願</th>
+                  <th style="min-width: 85px;">抵達通知</th>
+                </tr>
+              </thead>
+              <tbody id="live-patients-tbody">
+                <tr><td colspan="11" style="text-align: center; padding: 24px; color: var(--text-dim);">載入中...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 分頁 2: 本日入院病人名單管理 -->
+    <section class="tab-pane" id="pane-patients">
+      <!-- 隱私保證標籤 -->
+      <div style="display: flex; align-items: center; justify-content: space-between; background: rgba(16, 185, 129, 0.08); border: 1px dashed rgba(16, 185, 129, 0.35); border-radius: var(--radius-md); padding: 6px 14px; margin-bottom: 8px; font-size: 12px; color: var(--text-color);">
+        <span>🔒 <b>本機獨立保密保護</b>：病人表格與簽床修改僅保存在此電腦瀏覽器，絕不上傳或與他人共用。</span>
+        <span style="color: var(--text-muted); font-size: 11px;">Word 醫師配床為全院共用</span>
+      </div>
+
+      <!-- 頂部功能工具列：具備自動排床、切換方案、恢復名單、複製摘要、匯出 -->
+      <div style="background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 10px 14px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; justify-content: space-between;">
+        <div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
+          <button class="btn btn-teal btn-sm" id="btn-patients-paste" onclick="window.app.handleClipboardImport()" title="貼上病人名單 (在頁面任何處直接按 Ctrl+V 亦可瞬間免授權貼上)">📋 貼上病人 (Ctrl+V)</button>
+          <button class="btn btn-secondary" id="btn-patients-copy-summary">📋 複製名單摘要</button>
+          <button class="btn btn-purple" id="btn-patients-export-prompt">🤖 匯出 AI Prompt</button>
+          <button class="btn btn-orange" id="btn-patients-export-excel">📊 匯出 Excel</button>
+          <button class="btn btn-secondary btn-sm" id="btn-patients-sort-bed">↕️ 依床位排序</button>
+          <button class="btn btn-primary btn-sm" onclick="window.app.openPatientEditModal(-1)">➕ 新增病人</button>
+          <button class="btn btn-secondary btn-sm" id="btn-patients-clear-cache" onclick="window.app.clearLocalPatientData()" title="換班或公用電腦安全清除此瀏覽器暫存之病人資料">🔒 清除暫存名單</button>
+        </div>
+        <div style="display: flex; gap: 8px; align-items: center;">
+          <button class="btn btn-reset-config" id="btn-patients-reset" title="復原至上一筆操作（可復原自動排床或手動修改，Ctrl+Z）">↩ 上一步</button>
+          <button class="btn btn-reset-config" id="btn-patients-redo" title="重做至下一步操作（Ctrl+Y）">↪ 下一步</button>
+          <button class="btn btn-primary" id="btn-patients-auto-assign">⚡ 自動排床</button>
+        </div>
+      </div>
+
+      <!-- 篩選列 -->
+      <div style="background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 10px 14px; display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin-top: 8px;">
+        <div style="display: flex; align-items: center; gap: 6px;">
+          <label style="font-weight: 700; font-size: 13px;">簽床狀態:</label>
+          <select id="filter-status" class="bed-input" style="width: 120px;">
+            <option value="all">全部狀態</option>
+            <option value="assigned">已排定</option>
+            <option value="pending">待排床</option>
+            <option value="delayed">延後 (Delay)</option>
+          </select>
+        </div>
+
+        <div style="display: flex; align-items: center; gap: 6px;">
+          <label style="font-weight: 700; font-size: 13px;">性別:</label>
+          <select id="filter-gender" class="bed-input" style="width: 100px;">
+            <option value="all">全體</option>
+            <option value="M">男 (M)</option>
+            <option value="F">女 (F)</option>
+          </select>
+        </div>
+
+        <div style="display: flex; align-items: center; gap: 6px;">
+          <label style="font-weight: 700; font-size: 13px;">分配病房:</label>
+          <select id="filter-ward" class="bed-input" style="width: 120px;">
+            <option value="all">全院病房</option>
+            <option value="113">113 病房</option>
+            <option value="121">121 病房</option>
+            <option value="122">122 病房</option>
+            <option value="123">123 病房</option>
+            <option value="124">124 病房</option>
+          </select>
+        </div>
+
+        <div style="display: flex; align-items: center; gap: 6px; flex: 1; min-width: 200px;">
+          <label style="font-weight: 700; font-size: 13px;">搜尋:</label>
+          <input type="text" id="filter-search" class="bed-input" placeholder="輸入姓名、病歷號、醫師代號或診斷關鍵字...">
+        </div>
+      </div>
+
+      <!-- 病人資料完整表格：四大方案欄位全面呈現 + 房型意願 + 校正後房型意願 -->
+      <div class="table-responsive" style="background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius-md); margin-top: 8px;">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th style="width: 40px; text-align: center;">序號</th>
+              <th class="scheme-th active-scheme" id="th-p-scheme-1" style="width: 105px;">
+                <button class="scheme-copy-btn" onclick="window.app.copyStatusBedColumn(1)" title="直向複製「排床1」結果">📋 複製</button>
+                <span class="scheme-title-clickable" onclick="window.app.selectBedSchemeColumn(1)">排床1</span>
+              </th>
+              <th class="scheme-th" id="th-p-scheme-2" style="width: 105px;">
+                <button class="scheme-copy-btn" onclick="window.app.copyStatusBedColumn(2)" title="直向複製「排床2」結果">📋 複製</button>
+                <span class="scheme-title-clickable" onclick="window.app.selectBedSchemeColumn(2)">排床2</span>
+              </th>
+              <th class="scheme-th" id="th-p-scheme-3" style="width: 105px;">
+                <button class="scheme-copy-btn" onclick="window.app.copyStatusBedColumn(3)" title="直向複製「排床3」結果">📋 複製</button>
+                <span class="scheme-title-clickable" onclick="window.app.selectBedSchemeColumn(3)">排床3</span>
+              </th>
+              <th class="scheme-th" id="th-p-scheme-4" style="width: 105px;">
+                <button class="scheme-copy-btn" onclick="window.app.copyStatusBedColumn(4)" title="直向複製「排床4」結果">📋 複製</button>
+                <span class="scheme-title-clickable" onclick="window.app.selectBedSchemeColumn(4)">排床4</span>
+              </th>
+              <th style="width: 110px;">聯絡/抗凝</th>
+              <th style="width: 85px; text-align: center;">抵達通知</th>
+              <th style="min-width: 130px;">情況處置備註</th>
+              <th style="width: 85px; text-align: center;">病歷號</th>
+              <th style="width: 75px; text-align: center;">姓名</th>
+              <th style="width: 45px; text-align: center;">性別</th>
+              <th style="width: 85px; text-align: center;">主治醫師</th>
+              <th style="width: 65px; text-align: center;">燈號</th>
+              <th style="width: 120px;">請假代理</th>
+              <th style="min-width: 160px;">診斷與處置</th>
+              <th style="width: 110px;">房型意願</th>
+              <th style="width: 120px; text-align: center;">校正後房型意願</th>
+              <th style="width: 65px; text-align: center;">操作</th>
+            </tr>
+          </thead>
+          <tbody id="full-patients-tbody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- 分頁 3: 床位比對與預覽總覽 -->
+    <section class="tab-pane" id="pane-overview">
+      <div id="overview-beds-container" style="display: flex; flex-direction: column; gap: 14px;"></div>
+    </section>
+
+    <!-- 分頁 4: 醫師配床與請假總覽 (一體化資料表，欄位嚴格對齊) -->
+    <section class="tab-pane" id="pane-doctors">
+      <div style="display: flex; flex-direction: column; gap: 14px;">
+        <!-- 上方：整合式主治醫師與配床表 (各病房一體化表格，欄位完全垂直對齊) -->
+        <div style="background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 14px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 8px;">
+            <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+              <h3 style="font-size: 16px; font-weight: 700; margin: 0; color: var(--primary);">👨‍⚕️ 各病房主治醫師與配床表 (🌐 全院共用設定)</h3>
+              <div class="doctor-ward-pills" id="doc-ward-filter-pills">
+                <button class="pill-btn active" data-ward="all">全部病房</button>
+                <button class="pill-btn" data-ward="113">113</button>
+                <button class="pill-btn" data-ward="121">121</button>
+                <button class="pill-btn" data-ward="122">122</button>
+                <button class="pill-btn" data-ward="123">123</button>
+                <button class="pill-btn" data-ward="124">124</button>
+              </div>
+            </div>
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <input type="text" id="doc-filter-search" class="bed-input" style="width: 180px;" placeholder="搜尋醫師姓名或燈號...">
+              <button class="btn btn-secondary btn-sm" id="btn-add-doc">➕ 新增醫師</button>
+            </div>
+          </div>
+          <div class="table-responsive" style="max-height: 480px;">
+            <table class="data-table doctor-unified-table">
+              <colgroup>
+                <col style="width: 70px;">
+                <col style="width: 110px;">
+                <col style="width: 75px;">
+                <col style="width: 220px;">
+                <col>
+                <col style="width: 75px;">
+              </colgroup>
+              <thead>
+                <tr>
+                  <th style="text-align: center;">病房</th>
+                  <th style="text-align: center;">主治醫師</th>
+                  <th style="text-align: center;">燈號</th>
+                  <th>分配床位</th>
+                  <th>請假代理</th>
+                  <th style="text-align: center;">操作</th>
+                </tr>
+              </thead>
+              <tbody id="unified-doctors-tbody">
+                <tr><td colspan="6" style="text-align:center; padding: 20px;">載入中...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- 下方：醫師請假與代理清冊 -->
+        <div style="background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 14px;">
+          <h3 style="font-size: 16px; font-weight: 700; margin-bottom: 10px; color: #b45309;">🏖️ 醫師請假與代理清冊</h3>
+          <div id="leaves-list-container"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 分頁 5: 系統規則與房價資訊 -->
+    <section class="tab-pane" id="pane-rules">
+      <div id="rules-content-container"></div>
+    </section>
+
+  </main>
+
+  <!-- 底層狀態列 -->
+  <footer class="app-statusbar">
+    <div class="status-stats">
+      <span class="status-item">可用空床: <strong id="stat-total-beds">0</strong> 床</span>
+      <span class="status-item">今日入院病人: <strong id="stat-total-patients">0</strong> 位</span>
+      <span class="status-item" style="color: var(--success);">已排床: <strong id="stat-assigned-patients">0</strong> 位</span>
+      <span class="status-item" style="color: var(--warning);">待排/延後: <strong id="stat-pending-patients">0</strong> 位</span>
+      <span class="status-item">性別比例: <strong id="stat-gender-count">男 0 / 女 0</strong></span>
+    </div>
+    <div>病房簽床床位管理系統 · 純前端離線支援與高隱私版</div>
+  </footer>
+
+
+  <!-- 模態視窗 2: AI Prompt 複製彈窗 -->
+  <div class="modal-backdrop" id="prompt-modal">
+    <div class="modal-dialog modal-xl">
+      <div class="modal-header">
+        <div class="modal-title">🤖 醫療簽床 AI 提示詞 (ChatGPT / Gemini 排床專用)</div>
+        <button class="modal-close-btn" onclick="window.app.closeModal('prompt-modal')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 8px;">
+          此 Prompt 整合了去識別化病人名單、全院可用空床 JSON 與嚴格簽床規則。可直接一鍵複製至 ChatGPT 4o 或 Gemini 進行排床驗證！
+        </p>
+        <textarea id="prompt-textarea" style="width: 100%; height: 420px; font-family: var(--font-mono); font-size: 12px; padding: 10px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: var(--bg-subtle); color: var(--text-main); line-height: 1.6;"></textarea>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="window.app.closeModal('prompt-modal')">關閉</button>
+        <button class="btn btn-purple" onclick="window.app.copyPromptToClipboard()">📋 複製 Prompt 至剪貼簿</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 模態視窗 3: 病人編輯彈窗 -->
+  <div class="modal-backdrop" id="patient-edit-modal">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <div class="modal-title">✏️ 編輯病人入院資訊</div>
+        <button class="modal-close-btn" onclick="window.app.closeModal('patient-edit-modal')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="edit-patient-row-idx">
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+          <div>
+            <label style="font-size: 12px; font-weight: 700;">病人姓名:</label>
+            <input type="text" id="edit-patient-name" class="bed-input" style="width: 100%;">
+          </div>
+          <div>
+            <label style="font-size: 12px; font-weight: 700;">病歷號:</label>
+            <input type="text" id="edit-patient-chart-no" class="bed-input" style="width: 100%;">
+          </div>
+          <div>
+            <label style="font-size: 12px; font-weight: 700;">性別:</label>
+            <select id="edit-patient-gender" class="bed-input" style="width: 100%;">
+              <option value="M">男 (M)</option>
+              <option value="F">女 (F)</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size: 12px; font-weight: 700;">主治醫師燈號:</label>
+            <input type="text" id="edit-patient-doc-code" class="bed-input" style="width: 100%;">
+          </div>
+          <div>
+            <label style="font-size: 12px; font-weight: 700;">手動指定狀態/床位 (如 124-35 或 delay 1):</label>
+            <input type="text" id="edit-patient-status-bed" class="bed-input" style="width: 100%;">
+          </div>
+          <div>
+            <label style="font-size: 12px; font-weight: 700;">原始房型意願:</label>
+            <input type="text" id="edit-patient-bed-pref" class="bed-input" style="width: 100%;">
+          </div>
+          <div style="grid-column: span 2;">
+            <label style="font-size: 12px; font-weight: 700;">生效意願 (校正鏈，例如 2>4, 2$>2, 1):</label>
+            <input type="text" id="edit-patient-normalized-pref" class="bed-input" style="width: 100%;">
+          </div>
+          <div>
+            <label style="font-size: 12px; font-weight: 700;">抵達通知 (註記準時等):</label>
+            <input type="text" id="edit-patient-arrival" class="bed-input" style="width: 100%;">
+          </div>
+          <div>
+            <label style="font-size: 12px; font-weight: 700;">診斷:</label>
+            <input type="text" id="edit-patient-diagnosis" class="bed-input" style="width: 100%;">
+          </div>
+          <div style="grid-column: span 2;">
+            <label style="font-size: 12px; font-weight: 700;">聯絡資訊 / 抗凝劑註記:</label>
+            <input type="text" id="edit-patient-contact" class="bed-input" style="width: 100%;">
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="window.app.closeModal('patient-edit-modal')">取消</button>
+        <button class="btn btn-primary" onclick="window.app.savePatientEdit()">儲存修改</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 模態視窗 4: 醫師配床編輯彈窗 -->
+  <div class="modal-backdrop" id="doctor-edit-modal">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <div class="modal-title">👨‍⚕️ 編輯主治醫師配床與差勤資訊</div>
+        <button class="modal-close-btn" onclick="window.app.closeModal('doctor-edit-modal')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="edit-doc-orig-ward">
+        <input type="hidden" id="edit-doc-orig-code">
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+          <div>
+            <label style="font-size: 12px; font-weight: 700;">所屬病房:</label>
+            <select id="edit-doc-ward" class="bed-input" style="width: 100%;">
+              <option value="113">113</option>
+              <option value="121">121</option>
+              <option value="122">122</option>
+              <option value="123">123</option>
+              <option value="124">124</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size: 12px; font-weight: 700;">醫師姓名:</label>
+            <input type="text" id="edit-doc-name" class="bed-input" style="width: 100%;">
+          </div>
+          <div>
+            <label style="font-size: 12px; font-weight: 700;">燈號代碼:</label>
+            <input type="text" id="edit-doc-code" class="bed-input" style="width: 100%;">
+          </div>
+          <div>
+            <label style="font-size: 12px; font-weight: 700;">分配床位 (以逗號或空格分隔):</label>
+            <input type="text" id="edit-doc-bed-str" class="bed-input" style="width: 100%;">
+          </div>
+          <div style="grid-column: span 2;">
+            <label style="font-size: 12px; font-weight: 700;">請假資訊 (若在勤請留空):</label>
+            <input type="text" id="edit-doc-leave-period" class="bed-input" style="width: 100%;">
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="window.app.closeModal('doctor-edit-modal')">取消</button>
+        <button class="btn btn-danger btn-sm" id="btn-delete-doc" onclick="window.app.deleteDoctor()">🗑️ 刪除此醫師</button>
+        <button class="btn btn-primary" onclick="window.app.saveDoctorEdit()">儲存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 模態視窗 5: 快捷貼上病人名單彈窗 (免授權、完全不詢問) -->
+  <div class="modal-backdrop" id="quick-paste-modal">
+    <div class="modal-dialog" style="max-width: 520px;">
+      <div class="modal-header">
+        <div class="modal-title">📋 快速貼上病人名單（免瀏覽器授權、不跳詢問）</div>
+        <button class="modal-close-btn" onclick="window.app.closeModal('quick-paste-modal')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div style="background: rgba(59, 130, 246, 0.08); border: 1px solid rgba(59, 130, 246, 0.25); border-radius: var(--radius-md); padding: 10px 14px; margin-bottom: 12px; font-size: 13px; line-height: 1.6;">
+          <div style="font-weight: 700; color: var(--primary); margin-bottom: 4px;">🚀 0 秒免授權貼上方式：</div>
+          <div>在下方輸入框直接按鍵盤 <b>Ctrl + V</b>（或滑鼠右鍵貼上），系統將<b>自動偵測並瞬間完成匯入</b>，完全不會跳出瀏覽器「查看剪貼簿」詢問！</div>
+          <div style="margin-top: 6px; font-size: 11px; color: var(--text-muted);">💡 小撇步：往後在網頁任何畫面直接按 <b>Ctrl + V</b>，也能直接匯入！</div>
+        </div>
+        <textarea id="quick-paste-input" class="bed-input" style="width: 100%; height: 110px; font-family: monospace; font-size: 13px; box-sizing: border-box;" placeholder="👉 請直接按 Ctrl+V 貼上（貼上後會立刻自動匯入並關閉）..."></textarea>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="window.app.closeModal('quick-paste-modal')">關閉</button>
+        <button class="btn btn-primary" onclick="window.app.submitQuickPaste()">確定匯入</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 浮動 Toast 提示容器 -->
+  <div class="toast-container" id="toast-container"></div>
+
+  <!-- 應用程式模組載入 (包含預載常數 default_config.js，確保離線 file:// 完美運作) -->
+  <script src="js/default_config.js"></script>
+  <script src="js/hungarian.js"></script>
+  <script src="js/parsers.js"></script>
+  <script src="js/engine.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
