@@ -177,7 +177,15 @@ class BedConfigManager {
         return null;
     }
 
-    lookupBed(ward, bedNum) {
+    isDoctorInBedConfig(codeStr, nameStr) {
+        const cleanCode = String(codeStr || '').replace(/\D/g, '');
+        if (cleanCode && this.lookupDoctorByCode(cleanCode)) return true;
+        const cleanName = String(nameStr || '').trim();
+        if (cleanName && this.lookupDoctorByName(cleanName)) return true;
+        return false;
+    }
+
+    lookupBed(ward, bedNum, category = null) {
         const normWard = this._normalizeWardName(ward);
         const wardInfo = (this.data && this.data.wards) ? this.data.wards[normWard] : null;
 
@@ -197,16 +205,44 @@ class BedConfigManager {
         else if (normWard === 'A122' && bInt >= 36 && bInt <= 37) isIsolation = true;
         else if (normWard === 'A123' && bInt >= 36 && bInt <= 37) isIsolation = true;
 
+        const cleanW = String(normWard).replace('A', '');
+        let cat = category;
+        if (!cat && this.data && this.data.ward_category_inputs && this.data.ward_category_inputs[cleanW]) {
+            const inputs = this.data.ward_category_inputs[cleanW];
+            for (const cName of BedConfigManager.ASSIGNABLE_CATEGORIES) {
+                const s = inputs[cName];
+                if (s && typeof parseBedString === 'function') {
+                    const parsedBeds = parseBedString(s);
+                    if (parsedBeds.includes(bInt) || parsedBeds.includes(String(bedNum))) {
+                        cat = cName;
+                        break;
+                    }
+                }
+            }
+        }
+
         let bedType = "健保床";
         let isCoPay = false;
-        if (normWard === 'A122') {
+
+        // 規則：113-124 單人房為「單人5000」；122 雙人房為「2人房2400」；其餘為「健保床」
+        if (cat === '單人') {
+            bedType = "單人5000";
+            isCoPay = true;
+        } else if (cleanW === '122' && (cat === '男2' || cat === '女2' || cat === '雙空')) {
+            bedType = "2人房2400";
+            isCoPay = true;
+        } else if (cleanW === '122' && !cat) {
+            // 無法得知房型時的 122 預設規則 (1-5, 42-46 為健保，其餘為差額雙人)
             if ((bInt >= 1 && bInt <= 5) || (bInt >= 42 && bInt <= 46)) {
                 bedType = "健保床";
                 isCoPay = false;
             } else {
-                bedType = "差額床 (2人房2400/單人5000)";
+                bedType = "2人房2400";
                 isCoPay = true;
             }
+        } else {
+            bedType = "健保床";
+            isCoPay = false;
         }
 
         const result = {
@@ -1164,6 +1200,12 @@ class BedAssignmentEngine {
                     if (matchedCritIdx === -1) continue;
 
                     let wScore = 1000000.0;
+                    if (cleanDoc === this.DOC_1782) {
+                        wScore += 50000.0;
+                    } else if (manager && typeof manager.isDoctorInBedConfig === 'function' && !manager.isDoctorInBedConfig(cleanDoc, p.doctor_name || '')) {
+                        wScore -= 80000.0;
+                    }
+
                     if (isOwn) {
                         wScore += 10000.0;
                     } else if (proxiedDocs.includes(bDoc)) {
@@ -1297,6 +1339,37 @@ class BedAssignmentEngine {
             }
         }
 
+        const allocatedDocCodes = new Set();
+        const allocatedDocNames = new Set();
+        if (manager && manager.data && manager.data.wards) {
+            for (const wVal of Object.values(manager.data.wards)) {
+                for (const doc of (wVal.doctors || [])) {
+                    const c = (doc.code || '').replace(/\D/g, '');
+                    if (c) allocatedDocCodes.add(c);
+                    if (doc.name) allocatedDocNames.add(doc.name.trim());
+                }
+            }
+        }
+
+        const isDoctorInAllocation = (p) => {
+            const cleanCode = String(p.doc_code || '').replace(/\D/g, '');
+            const docName = String(p.doctor_name || p.doc_name || '').trim();
+            if (cleanCode && allocatedDocCodes.has(cleanCode)) return true;
+            if (docName && allocatedDocNames.has(docName)) return true;
+            if (manager && typeof manager.isDoctorInBedConfig === 'function') {
+                return manager.isDoctorInBedConfig(cleanCode, docName);
+            }
+            return false;
+        };
+
+        const docRandomMap = {};
+        for (const p of patients) {
+            const c = String(p.doc_code || '').replace(/\D/g, '');
+            if (c && docRandomMap[c] === undefined) {
+                docRandomMap[c] = Math.random();
+            }
+        }
+
         const youngVList = (manager && typeof manager.getYoungVList === 'function') ? manager.getYoungVList() : [];
         if (youngVList.length) {
             logs.push(`Young V 衝勁醫師登錄燈號: ${youngVList.join(', ')} (優先收治急診病人)`);
@@ -1304,21 +1377,50 @@ class BedAssignmentEngine {
 
         const isPriorityArrival = (p) => String(p.arrival || '').trim().includes('準時');
 
-        const tierSortKey = (p) => {
+        // 每個位階統一排序邏輯：
+        // 1. 1782 醫師最先排 (docTier: 0)
+        // 2. 其餘在配床主治醫師採隨機 (docTier: 1, 依 docRand 隨機排序)
+        // 3. 主治醫師不在醫師配床名冊者，一律排在該位階最後處理 (docTier: 2)
+        // 4. 同階層依 Delay 天數、校正後房型限制(MRV)與隨機規則排序
+        const tierPrioritySortKey = (p) => {
+            const cleanDocCode = String(p.doc_code || '').replace(/\D/g, '');
+            const is1782 = (cleanDocCode === this.DOC_1782);
+            let docTier = 1;
+            if (is1782) {
+                docTier = 0;
+            } else if (!isDoctorInAllocation(p)) {
+                docTier = 2;
+            }
+
             let delayDays = p.initial_delay_days;
             if (delayDays === undefined || delayDays === null || delayDays === 0) {
                 delayDays = (typeof ExcelPatientParser !== 'undefined')
                     ? ExcelPatientParser.extractDelayDays(p.raw_status_bed || p.status_bed || '')
                     : 0;
             }
+
+            const docRand = (cleanDocCode && docRandomMap[cleanDocCode] !== undefined)
+                ? docRandomMap[cleanDocCode]
+                : (p._rand_tie !== undefined ? p._rand_tie : 0.0);
+
             const [choiceCount, prefRank, randVal] = this.getPreferenceSortKey(p);
-            return [-delayDays, choiceCount, prefRank, randVal, p.row_idx || 999];
+
+            return [
+                docTier,
+                -delayDays,
+                docRand,
+                choiceCount,
+                prefRank,
+                randVal,
+                p.row_idx || 999
+            ];
         };
 
-        const priorityArrivalSortKey = tierSortKey;
-        const erPrioritySortKey = tierSortKey;
-        const remainingSortKey = tierSortKey;
-        const step3SortKey = tierSortKey;
+        const tierSortKey = tierPrioritySortKey;
+        const priorityArrivalSortKey = tierPrioritySortKey;
+        const erPrioritySortKey = tierPrioritySortKey;
+        const remainingSortKey = tierPrioritySortKey;
+        const step3SortKey = tierPrioritySortKey;
 
         function multiKeySort(arr, keyFn) {
             return arr.slice().sort((a, b) => {
@@ -1468,6 +1570,7 @@ class BedAssignmentEngine {
             p.is_assigned = true;
             p.assigned_ward = ward;
             p.assigned_bed = String(bNum);
+            p.assigned_stage = stageName;
             assignedCount++;
 
             const chartNo = String(p.chart_no || '').trim();
@@ -1623,7 +1726,7 @@ class BedAssignmentEngine {
                 }
             }
 
-            const copayTargetPts = activePatients.filter(p => p._strat_upgrade_copay && !p.is_assigned);
+            const copayTargetPts = multiKeySort(activePatients.filter(p => p._strat_upgrade_copay && !p.is_assigned), tierPrioritySortKey);
             for (const p of copayTargetPts) {
                 const gender = p.gender || 'M';
                 const cDoc = (p.doc_code || '').replace(/\D/g, '');
@@ -1737,18 +1840,29 @@ class BedAssignmentEngine {
             return [wardTier, twinTier, bNumVal];
         };
 
-        const findOwnBed = (p) => {
+        const findOwnBed = (p, include1782PartnerBeds = true) => {
             const gender = p.gender || 'M';
             const cleanDocCode = (p.doc_code || '').replace(/\D/g, '');
             if (!cleanDocCode) return null;
             const [orderCriteria, allowCoPay] = this.parsePreference(this.getPatientEffectivePref(p));
             const homeWard = docHomeWards[cleanDocCode] || "";
+            const eligibleBedDoctors = new Set([cleanDocCode]);
+            if (include1782PartnerBeds && cleanDocCode === this.DOC_1782) {
+                eligibleBedDoctors.add(this.DOC_1691);
+                eligibleBedDoctors.add(this.DOC_1699);
+            }
 
             let matchedBed = null;
             for (const crit of orderCriteria) {
-                const ownBeds = pool.filter(b => b.clean_doc_code === cleanDocCode && this.bedMatchesCriterion(b, crit, gender, allowCoPay));
+                const ownBeds = pool.filter(b =>
+                    eligibleBedDoctors.has(b.clean_doc_code) && this.bedMatchesCriterion(b, crit, gender, allowCoPay)
+                );
                 if (ownBeds.length > 0) {
                     ownBeds.sort((a, b) => {
+                        // 1782 自己的床優先；1691/1699 只在本床不足時作為本位階的優先借床。
+                        const aIsPartnerBed = a.clean_doc_code !== cleanDocCode ? 1 : 0;
+                        const bIsPartnerBed = b.clean_doc_code !== cleanDocCode ? 1 : 0;
+                        if (aIsPartnerBed !== bIsPartnerBed) return aIsPartnerBed - bIsPartnerBed;
                         const ka = rankOwnBed(a, homeWard, p);
                         const kb = rankOwnBed(b, homeWard, p);
                         for (let i = 0; i < ka.length; i++) {
@@ -1912,15 +2026,20 @@ class BedAssignmentEngine {
             return { matchedBed, isProxyBorrow };
         };
 
-        // 分組三類基本病人群 (互斥集合)
-        const onTimePatients = multiKeySort(activePatients.filter(isPriorityArrival), tierSortKey);
-        const erPatients = multiKeySort(activePatients.filter(p => !isPriorityArrival(p) && this.isErEicuPatient(p)), tierSortKey);
-        const otherPatients = multiKeySort(activePatients.filter(p => !isPriorityArrival(p) && !this.isErEicuPatient(p)), tierSortKey);
+        // 分組三類基本病人群 (互斥集合)：無主治急診與普通病人同列第三位階。
+        const hasAttendingDoctor = (p) => Boolean(String(p.doc_code || '').replace(/\D/g, ''));
+        const onTimePatients = multiKeySort(activePatients.filter(isPriorityArrival), tierPrioritySortKey);
+        const erPatients = multiKeySort(activePatients.filter(p =>
+            !isPriorityArrival(p) && this.isErEicuPatient(p) && hasAttendingDoctor(p)
+        ), tierPrioritySortKey);
+        const otherPatients = multiKeySort(activePatients.filter(p =>
+            !isPriorityArrival(p) && (!this.isErEicuPatient(p) || !hasAttendingDoctor(p))
+        ), tierPrioritySortKey);
 
         // =========================================================================
-        // 【位階 1】先找準時病人剛好主治醫師有他對應床位的 (delay多的先排，同delay隨機)
+        // 【位階 1】先找準時病人剛好主治醫師有他對應床位的 (1782 優先，其他主治隨機，不在配床置底)
         // =========================================================================
-        logs.push(`\n--- 【位階 1】準時病人配對主治醫師本床 (共 ${onTimePatients.length} 位) ---`);
+        logs.push(`\n--- 【位階 1】準時病人配對主治醫師本床 (1782 優先，共 ${onTimePatients.length} 位) ---`);
         for (const p of onTimePatients) {
             if (p.is_assigned) continue;
             const chartNo = String(p.chart_no || '').trim();
@@ -1929,16 +2048,24 @@ class BedAssignmentEngine {
                 p.is_assigned = false;
                 continue;
             }
-            const matchedBed = findOwnBed(p);
+            // 1782 比對本床時，1691、1699 符合房型床位亦納入 1782 的可用床位
+            const matchedBed = findOwnBed(p, true);
             if (matchedBed) {
-                assignBedToPatient(p, matchedBed, false, false, `主治醫師本床(${matchedBed.doctor_name})`, "位階1-準時病人本床");
+                const cleanDocCode = String(p.doc_code || '').replace(/\D/g, '');
+                const is1782PartnerBorrow = cleanDocCode === this.DOC_1782 &&
+                    [this.DOC_1691, this.DOC_1699].includes(matchedBed.clean_doc_code);
+                const docInfo = is1782PartnerBorrow
+                    ? `借用 124 核心醫師床位(${matchedBed.doctor_name})`
+                    : `主治醫師本床(${matchedBed.doctor_name})`;
+                const stageName = is1782PartnerBorrow ? "位階1-1782優先借1691/1699床" : "位階1-準時病人本床";
+                assignBedToPatient(p, matchedBed, is1782PartnerBorrow, false, docInfo, stageName);
             }
         }
 
         // =========================================================================
-        // 【位階 2】ER或EICU有剛好主治醫師有他對應床位的 (delay多的先排，同delay隨機)
+        // 【位階 2】ER或EICU有剛好主治醫師有他對應床位的 (1782 優先，其他主治隨機，不在配床置底)
         // =========================================================================
-        logs.push(`\n--- 【位階 2】ER/EICU病人配對主治醫師本床 (共 ${erPatients.length} 位) ---`);
+        logs.push(`\n--- 【位階 2】ER/EICU病人配對主治醫師本床 (1782 優先，共 ${erPatients.length} 位) ---`);
         for (const p of erPatients) {
             if (p.is_assigned) continue;
             const chartNo = String(p.chart_no || '').trim();
@@ -1947,16 +2074,24 @@ class BedAssignmentEngine {
                 p.is_assigned = false;
                 continue;
             }
-            const matchedBed = findOwnBed(p);
+            // 1782 比對本床時，1691、1699 符合房型床位亦納入 1782 的可用床位
+            const matchedBed = findOwnBed(p, true);
             if (matchedBed) {
-                assignBedToPatient(p, matchedBed, false, false, `主治醫師本床(${matchedBed.doctor_name})`, "位階2-ER/EICU病人本床");
+                const cleanDocCode = String(p.doc_code || '').replace(/\D/g, '');
+                const is1782PartnerBorrow = cleanDocCode === this.DOC_1782 &&
+                    [this.DOC_1691, this.DOC_1699].includes(matchedBed.clean_doc_code);
+                const docInfo = is1782PartnerBorrow
+                    ? `借用 124 核心醫師床位(${matchedBed.doctor_name})`
+                    : `主治醫師本床(${matchedBed.doctor_name})`;
+                const stageName = is1782PartnerBorrow ? "位階2-1782優先借1691/1699床" : "位階2-ER/EICU病人本床";
+                assignBedToPatient(p, matchedBed, is1782PartnerBorrow, false, docInfo, stageName);
             }
         }
 
         // =========================================================================
-        // 【位階 3】其他病人主治醫師剛好有自己病人的床位的 (delay多的先排，同delay隨機)
+        // 【位階 3】普通病人與無主治急診：1782 優先，再依 Delay 天數比對本床
         // =========================================================================
-        logs.push(`\n--- 【位階 3】其他病人配對主治醫師本床 (共 ${otherPatients.length} 位) ---`);
+        logs.push(`\n--- 【位階 3】普通病人／無主治急診配對主治醫師本床 (1782 優先，共 ${otherPatients.length} 位) ---`);
         for (const p of otherPatients) {
             if (p.is_assigned) continue;
             const chartNo = String(p.chart_no || '').trim();
@@ -1965,9 +2100,17 @@ class BedAssignmentEngine {
                 p.is_assigned = false;
                 continue;
             }
-            const matchedBed = findOwnBed(p);
+            // 1782 在第三位階可優先使用 1691／1699 床位；仍以借床方式輸出。
+            const matchedBed = findOwnBed(p, true);
             if (matchedBed) {
-                assignBedToPatient(p, matchedBed, false, false, `主治醫師本床(${matchedBed.doctor_name})`, "位階3-其他病人本床");
+                const cleanDocCode = String(p.doc_code || '').replace(/\D/g, '');
+                const is1782PartnerBorrow = cleanDocCode === this.DOC_1782 &&
+                    [this.DOC_1691, this.DOC_1699].includes(matchedBed.clean_doc_code);
+                const docInfo = is1782PartnerBorrow
+                    ? `借用 124 核心醫師床位(${matchedBed.doctor_name})`
+                    : `主治醫師本床(${matchedBed.doctor_name})`;
+                const stageName = is1782PartnerBorrow ? "位階3-1782優先借1691/1699床" : "位階3-其他病人本床";
+                assignBedToPatient(p, matchedBed, is1782PartnerBorrow, false, docInfo, stageName);
             }
         }
 
@@ -1977,9 +2120,9 @@ class BedAssignmentEngine {
         if (strategyMode === 'bipartite_after_step2') {
             logs.push("\n--- 【方案 4：本床後全域二分圖最佳借床 (位階 4 -> 位階 5 -> 位階 6)】 ---");
             const stages = [
-                { list: onTimePatients.filter(p => !p.is_assigned), name: "位階4-準時借床(二分圖)" },
-                { list: erPatients.filter(p => !p.is_assigned), name: "位階5-ER/EICU借床(二分圖)" },
-                { list: otherPatients.filter(p => !p.is_assigned), name: "位階6-其他病人借床(二分圖)" }
+                { list: multiKeySort(onTimePatients.filter(p => !p.is_assigned), tierPrioritySortKey), name: "位階4-準時借床(二分圖)" },
+                { list: multiKeySort(erPatients.filter(p => !p.is_assigned), tierPrioritySortKey), name: "位階5-ER/EICU借床(二分圖)" },
+                { list: multiKeySort(otherPatients.filter(p => !p.is_assigned), tierPrioritySortKey), name: "位階6-其他病人借床(二分圖)" }
             ];
 
             for (const stg of stages) {
@@ -2057,8 +2200,8 @@ class BedAssignmentEngine {
         // =========================================================================
         // 【位階 4】準時但主治醫師沒有剛好他的床位的 (借床)
         // =========================================================================
-        const stage4Unassigned = multiKeySort(onTimePatients.filter(p => !p.is_assigned), tierSortKey);
-        logs.push(`\n--- 【位階 4】準時但主治醫師無本床病人向其他醫師借床 (共 ${stage4Unassigned.length} 位) ---`);
+        const stage4Unassigned = multiKeySort(onTimePatients.filter(p => !p.is_assigned), tierPrioritySortKey);
+        logs.push(`\n--- 【位階 4】準時但主治醫師無本床病人向其他醫師借床 (1782 優先，共 ${stage4Unassigned.length} 位) ---`);
         for (const p of stage4Unassigned) {
             if (p.is_assigned) continue;
             const chartNo = String(p.chart_no || '').trim();
@@ -2079,8 +2222,8 @@ class BedAssignmentEngine {
         // =========================================================================
         // 【位階 5】ER或EICU主治醫師沒有剛好他的床位的 (借床)
         // =========================================================================
-        const stage5Unassigned = multiKeySort(erPatients.filter(p => !p.is_assigned), tierSortKey);
-        logs.push(`\n--- 【位階 5】ER/EICU 主治醫師無本床病人向其他醫師借床 (共 ${stage5Unassigned.length} 位) ---`);
+        const stage5Unassigned = multiKeySort(erPatients.filter(p => !p.is_assigned), tierPrioritySortKey);
+        logs.push(`\n--- 【位階 5】ER/EICU 主治醫師無本床病人向其他醫師借床 (1782 優先，共 ${stage5Unassigned.length} 位) ---`);
         for (const p of stage5Unassigned) {
             if (p.is_assigned) continue;
             const chartNo = String(p.chart_no || '').trim();
@@ -2101,8 +2244,8 @@ class BedAssignmentEngine {
         // =========================================================================
         // 【位階 6】剩下的病人主治醫師沒有剛好他的床位的 (借床)
         // =========================================================================
-        const stage6Unassigned = multiKeySort(otherPatients.filter(p => !p.is_assigned), tierSortKey);
-        logs.push(`\n--- 【位階 6】剩餘病人主治醫師無本床向其他醫師借床 (共 ${stage6Unassigned.length} 位) ---`);
+        const stage6Unassigned = multiKeySort(otherPatients.filter(p => !p.is_assigned), tierPrioritySortKey);
+        logs.push(`\n--- 【位階 6】剩餘病人主治醫師無本床向其他醫師借床 (1782 優先，共 ${stage6Unassigned.length} 位) ---`);
         for (const p of stage6Unassigned) {
             if (p.is_assigned) continue;
             const chartNo = String(p.chart_no || '').trim();
@@ -2530,18 +2673,18 @@ class AIPromptGenerator {
 
 2. 急診病人 (ER/EICU) 判定與排床位階體系：
    - 急診病人辨識來源：檢視病人名單之【聯絡/抗凝】、【抵達通知】、【其他備註】、【房型意願】四大欄位，若包含 EICU、ER（精確詞邊界比對，排除 ERCP、ERBD、liver 等臨床處置或名詞誤判）或「急診」字樣，即判定為急診病人。
-   - 【第一位階（最優先）】：抵達通知 (arrival) 明確包含「準時」二字之病人，依校正後房型意願僅比對其主治醫師是否有對應本床（步驟 1）。（1782 若無本床可先借用 1699/1691 124空床；其餘醫師本床優先，不在此步驟借床）。
-   - 【第二位階（次優先）】：經判定為急診 (ER/EICU) 且【主治醫師欄位有登錄醫師】之病人。該病人群位階比所有沒有準時的普通病人優先，但排在準時病人後面；排序方式亦先依房型意願比對主治醫師本床（步驟 1.5）。（1782 若無本床可借用 1699/1691 124空床）。
-   - 【第三位階（一般待排）】：若急診病人主治醫師欄位沒有人（未指定主治醫師），位階與其他沒有準時的普通病人相同。全體剩餘待排病人依照【Delay 天數多者優先】（同 delay 天數時 1782 享 delay-1 等效優勢，短天數住院優先；同位階時依校正後房型種類最少者優先，只有1 > 只有2$ > 只有2與只有4，同條件採隨機排序），依房型意願比對主治醫師本床（步驟 2）。無主治醫師之急診病人因無專屬本床，保留至後續借床步驟。
+   - 【第一位階（最優先）】：抵達通知 (arrival) 明確包含「準時」二字之病人，每個位階均先排 1782 病人（其餘在配床主治醫師隨機，不在配床者置底），比對主治醫師本床（1782 比對本床時一併納入 1691/1699 符合房型之床位）。
+   - 【第二位階（次優先）】：經判定為急診 (ER/EICU) 且【主治醫師欄位有登錄醫師】之病人。該病人群位階比所有沒有準時的普通病人優先，但排在準時病人後面；排序方式亦先排 1782 病人（其餘在配床主治醫師隨機，不在配床者置底），依房型意願比對主治醫師本床（1782 比對本床時一併納入 1691/1699 符合房型之床位）。
+   - 【第三位階（一般待排）】：若急診病人主治醫師欄位沒有人（未指定主治醫師），位階與其他沒有準時的普通病人相同。全體待排病人同樣先排 1782 病人（其餘在配床主治醫師隨機，不在配床者置底），依照【Delay 天數多者優先】依房型意願比對主治醫師本床（1782 比對本床時一併納入 1691/1699 符合房型之床位）。無主治醫師之急診病人因無專屬本床，保留至後續借床步驟。
 
 3. 方案 1 嚴格五大階段執行順序（必須單向依序執行，不得跳步或交錯）：
    - 步驟 0：純他科高級單人房病人處理（意願為純 1(192)、1(119)、1(129) 者，直接標記該房號已排床，不佔本院空床，不計入 delay）。
    - 步驟 1（第一位階 - 最優先）：抵達通知包含「準時」病人，比對主治醫師本床。
-     順序：1782 準時病人配對本床 -> 1782 若無本床先借用 1699/1691 124病房空床 -> 1699/1691 準時病人配對本床 -> 其餘醫師準時病人配對本床。（同位階依校正後意願種類最少者優先：只有1 > 只有2$ > 只有2與只有4，同條件採隨機排序；未排定者保留至步驟 3 同病房借床）。
+     順序：1782 準時病人最先排本床（納入 1691/1699 支援床） -> 其餘在配床醫師準時病人隨機順序配對本床 -> 主治醫師不在配床者置底。（同位階依校正後意願種類最少者優先：只有1 > 只有2$ > 只有2與只有4，同條件採隨機排序；未排定者保留至步驟 3 同病房借床）。
    - 步驟 1.5（第二位階 - 次優先）：有主治醫師之急診優先病人（ER/EICU），比對主治醫師本床。
-     順序：依 effective_delay（1782 享 +1 天優勢）排序，同天數依醫師位階（1782 > 1699/1691 > 其他）。1782 急診優先配本床 -> 1782 若無本床借用 1699/1691 124空床 -> 1699/1691 急診優先配本床 -> 其餘醫師急診優先配本床。（同位階依校正後意願種類最少者優先：只有1 > 只有2$ > 只有2與只有4，同條件採隨機排序；未排定者保留至步驟 3 同病房借床）。
-   - 步驟 2（第三位階 - 剩餘待排）：普通病人與無主治急診病人，依照【Delay 天數多者優先】比對主治醫師本床（確保全員專屬本床在被借出前保留給自己病人）。
-     排序：Delay 天數多者優先（1782 享 delay-1 等效優勢；短天數住院者優先；同天數時 1782 > 1699/1691 > 其他；次依急診優先；同位階依校正後意願種類最少者優先：只有1 > 只有2$ > 只有2與只有4，同條件採隨機排序）。1782 病人若無本床，優先借用 124 病房 1699/1691 空床。（無主治醫師急診病人無本床，保留至步驟 4 借床）。
+     順序：1782 急診優先配本床（納入 1691/1699 支援床） -> 其餘在配床醫師急診優先病人隨機順序配本床 -> 主治醫師不在配床者置底。（同天數同條件採隨機排序；未排定者保留至步驟 3 同病房借床）。
+   - 步驟 2（第三位階 - 剩餘待排）：普通病人與無主治急診病人，依照【Delay 天數多者優先】比對主治醫師本床。
+     排序：1782 病人最先配本床（納入 1691/1699 支援床） -> 其餘在配床醫師依 Delay 天數與隨機順序配本床 -> 主治醫師不在配床者置底。（無主治醫師急診病人無本床，保留至步驟 4 借床）。
    - 步驟 3：步驟 1（準時）與步驟 1.5（急診優先）未排定本床之病人，向【同病房其他主治醫師】借床。
      借床挑選順序（以同病房內符合性別與意願之可用空床比對）：
      1) 代理之請假醫師床位最優先（若病人主治為代理醫師且請假醫師在同病房有床，最優先讓代理醫師病人入住，Tier -1）。

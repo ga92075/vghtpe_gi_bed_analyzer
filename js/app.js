@@ -46,7 +46,6 @@ class BedAnalyzerApp {
         this.btnExportConfig = document.getElementById('btn-export-config');
         this.btnImportConfig = document.getElementById('btn-import-config');
         this.btnImportExcel = document.getElementById('btn-import-excel');
-        this.btnReloadExcel = document.getElementById('btn-reload-excel');
         this.btnImportClipboard = document.getElementById('btn-import-clipboard');
         this.youngVInput = document.getElementById('young-v-input');
 
@@ -146,9 +145,6 @@ class BedAnalyzerApp {
 
         if (this.btnImportExcel) {
             this.btnImportExcel.addEventListener('click', () => this.fileExcelInput.click());
-        }
-        if (this.btnReloadExcel) {
-            this.btnReloadExcel.addEventListener('click', () => this.fileExcelInput.click());
         }
         if (this.fileExcelInput) {
             this.fileExcelInput.addEventListener('change', (e) => this.handleExcelUpload(e));
@@ -277,6 +273,20 @@ class BedAnalyzerApp {
         if (this.btnPatientsSortBed) {
             this.btnPatientsSortBed.addEventListener('click', () => this.toggleRtBedSort());
         }
+
+        // 點擊已排定床位儲存格的淺綠色邊緣即可鎖定；點擊床位橢圓本身仍保留雙擊編輯功能。
+        const bindBedLockToggle = (tbody) => {
+            if (!tbody) return;
+            tbody.addEventListener('click', (event) => {
+                const cell = event.target.closest('.scheme-cell');
+                if (!cell || !tbody.contains(cell) || event.target.closest('.badge, .cell-inline-editor')) return;
+                const rowIdx = Number(cell.dataset.patientRow);
+                const schemeIdx = Number(cell.dataset.schemeIdx);
+                if (rowIdx && schemeIdx) this.toggleBedLock(rowIdx, schemeIdx);
+            });
+        };
+        bindBedLockToggle(this.livePatientsTbody);
+        bindBedLockToggle(this.fullPatientsTbody);
 
         // 全域 Ctrl+Z 上一步快速鍵 與 Ctrl+Y / Ctrl+Shift+Z 下一步快速鍵
         window.addEventListener('keydown', (e) => {
@@ -675,14 +685,25 @@ class BedAnalyzerApp {
                     // 同病房有留床之床位視同不參與排床
                     if (reservedBeds.has(String(bNum))) continue;
 
-                    const bedInfo = this.manager.lookupBed(w, bNum);
-                    let isCo = bedInfo ? bedInfo.is_co_pay : false;
-                    if (cat === '單人') isCo = true;
-
+                    const bedInfo = this.manager.lookupBed(w, bNum, cat);
                     const docCode = bedInfo ? (bedInfo.clean_doc_code || (bedInfo.doctor_code || '').replace(/\D/g, '')) : "";
                     const docName = bedInfo ? bedInfo.doctor_name : "未知";
-                    const bedType = bedInfo ? bedInfo.bed_type : "健保床";
                     const isIso = bedInfo ? bedInfo.is_isolation : false;
+
+                    // 113-124 單人房為「單人5000」；122 雙人房為「2人房2400」；其餘維持「健保床」
+                    const wClean = String(w).replace('A', '');
+                    let isCo = false;
+                    let bedType = "健保床";
+                    if (cat === '單人') {
+                        bedType = "單人5000";
+                        isCo = true;
+                    } else if (wClean === '122' && ['男2', '女2', '雙空'].includes(cat)) {
+                        bedType = "2人房2400";
+                        isCo = true;
+                    } else {
+                        bedType = "健保床";
+                        isCo = false;
+                    }
 
                     let partner = null;
                     if (cat === '雙空') {
@@ -714,6 +735,20 @@ class BedAnalyzerApp {
             }
         }
         return availableBeds;
+    }
+
+    // 留床不參與自動排床，但仍是空床數顯示的一部分。
+    getReservedBedKeys() {
+        const reservedBedKeys = new Set();
+        for (const ward of BedConfigManager.STANDARD_WARDS) {
+            const beds = parseBedString(this.manager.getInput(ward, '留床')) || [];
+            beds.forEach(bed => {
+                const bedNum = String(bed).trim();
+                const normalizedBedNum = /^\d+$/.test(bedNum) ? String(parseInt(bedNum, 10)) : bedNum;
+                if (normalizedBedNum) reservedBedKeys.add(`${ward}-${normalizedBedNum}`);
+            });
+        }
+        return reservedBedKeys;
     }
 
     initBedInputWrappers() {
@@ -902,7 +937,7 @@ class BedAnalyzerApp {
                 bNums.forEach(bNum => {
                     const bNumStr = String(bNum);
                     const cleanB = /^\d+$/.test(bNumStr) ? String(parseInt(bNumStr, 10)) : bNumStr;
-                    const bedInfo = this.manager.lookupBed(ward, bNum);
+                    const bedInfo = this.manager.lookupBed(ward, bNum, cat);
                     const occPatient = occMap[`${ward}-${cleanB}`] || occMap[`${ward}-${bNumStr}`];
                     if (occPatient) occupiedCount++;
 
@@ -1062,6 +1097,8 @@ class BedAnalyzerApp {
             }
             patient.status_bed = formattedBed;
             patient.raw_status_bed = formattedBed;
+            delete patient.bed_lock_restore;
+            patient.is_bed_locked = isAss;
             patient.initial_delay_days = (typeof ExcelPatientParser !== 'undefined')
                 ? ExcelPatientParser.extractDelayDays(formattedBed)
                 : 0;
@@ -1353,9 +1390,15 @@ class BedAnalyzerApp {
 
     /** 更新主畫面與病人名單四個排床方案的剩餘空床數。 */
     updateSchemeVacancies(availableBeds, patients) {
-        const availableBedKeys = new Set(availableBeds.map(b =>
-            `${String(b.ward || '').replace('A', '')}-${String(b.bed_num || '')}`
+        const normalizeBedNum = (bed) => {
+            const value = String(bed || '').trim();
+            return /^\d+$/.test(value) ? String(parseInt(value, 10)) : value;
+        };
+        const countableBedKeys = new Set(availableBeds.map(b =>
+            `${String(b.ward || '').replace('A', '')}-${normalizeBedNum(b.bed_num)}`
         ));
+        // 留床會顯示在空床數中，但不加入 getAvailableBeds()，因此不會被自動排床使用。
+        this.getReservedBedKeys().forEach(bedKey => countableBedKeys.add(bedKey));
 
         for (let schemeIdx = 1; schemeIdx <= 4; schemeIdx++) {
             const occupiedBedKeys = new Set();
@@ -1367,19 +1410,99 @@ class BedAnalyzerApp {
                 if (!isAssigned) return;
 
                 const ward = String(p[`assigned_ward_${schemeIdx}`] || p.assigned_ward || '').replace('A', '');
-                const bed = String(p[`assigned_bed_${schemeIdx}`] || p.assigned_bed || '');
+                const bed = normalizeBedNum(p[`assigned_bed_${schemeIdx}`] || p.assigned_bed || '');
                 const bedKey = `${ward}-${bed}`;
 
-                // 僅扣除原先列入可用空床池的床位；VIP／他科借床不影響此數字。
-                if (availableBedKeys.has(bedKey)) occupiedBedKeys.add(bedKey);
+                // 僅扣除院內可用／留床的床位；VIP／他科借床不影響此數字。
+                if (countableBedKeys.has(bedKey)) occupiedBedKeys.add(bedKey);
             });
 
-            const vacancyText = `(空床:${Math.max(0, availableBeds.length - occupiedBedKeys.size)})`;
+            const vacancyText = `(空床:${Math.max(0, countableBedKeys.size - occupiedBedKeys.size)})`;
             ['scheme-vacancy', 'patients-scheme-vacancy'].forEach(prefix => {
                 const element = document.getElementById(`${prefix}-${schemeIdx}`);
                 if (element) element.textContent = vacancyText;
             });
         }
+    }
+
+    /** 判斷此病人的床位是否已被手動鎖定（包含匯入時原本已填妥的床位）。 */
+    isBedLocked(patient) {
+        const rawStatus = String(patient.raw_status_bed || '').trim();
+        const hasImportedBed = Boolean(
+            rawStatus && !rawStatus.toLowerCase().includes('delay') && !rawStatus.includes('待') && !['-', '無'].includes(rawStatus)
+        );
+        return Boolean(patient.is_bed_locked || patient.is_manual_assigned || hasImportedBed);
+    }
+
+    /** 將指定方案的床位鎖定到四個方案，或解除鎖定並回復鎖定前結果。 */
+    toggleBedLock(rowIdx, schemeIdx) {
+        const patients = (this.manager.patientData && this.manager.patientData.patients) ? this.manager.patientData.patients : [];
+        const patient = patients.find(p => p.row_idx === rowIdx) || patients[rowIdx - 1];
+        if (!patient) return;
+
+        if (this.isBedLocked(patient)) {
+            this.pushUndoSnapshot();
+            if (patient.bed_lock_restore) {
+                Object.assign(patient, patient.bed_lock_restore);
+                delete patient.bed_lock_restore;
+            } else {
+                // 匯入時已有的床位沒有「鎖定前方案」可回復，僅解除其手動鎖定屬性。
+                patient.is_bed_locked = false;
+                patient.is_manual_assigned = false;
+                patient.raw_status_bed = '';
+            }
+            this.showToast(`已解除「${patient.name || '病人'}」的床位鎖定；下次自動排床可重新安排。`, 'info');
+        } else {
+            const statusBed = String(patient[`status_bed_${schemeIdx}`] || patient.status_bed || '').trim();
+            const isAssigned = patient[`is_assigned_${schemeIdx}`] !== undefined
+                ? patient[`is_assigned_${schemeIdx}`]
+                : patient.is_assigned;
+            if (!isAssigned || !statusBed || statusBed.toLowerCase().includes('delay') || statusBed.includes('待')) {
+                this.showToast('僅能鎖定已排定的床位。', 'warning');
+                return;
+            }
+
+            this.pushUndoSnapshot();
+
+            patient.bed_lock_restore = {
+                status_bed: patient.status_bed,
+                raw_status_bed: patient.raw_status_bed,
+                initial_delay_days: patient.initial_delay_days,
+                is_assigned: patient.is_assigned,
+                assigned_ward: patient.assigned_ward,
+                assigned_bed: patient.assigned_bed,
+                is_manual_assigned: patient.is_manual_assigned,
+                is_bed_locked: patient.is_bed_locked
+            };
+            for (let k = 1; k <= 4; k++) {
+                patient.bed_lock_restore[`status_bed_${k}`] = patient[`status_bed_${k}`];
+                patient.bed_lock_restore[`is_assigned_${k}`] = patient[`is_assigned_${k}`];
+                patient.bed_lock_restore[`assigned_ward_${k}`] = patient[`assigned_ward_${k}`];
+                patient.bed_lock_restore[`assigned_bed_${k}`] = patient[`assigned_bed_${k}`];
+            }
+
+            const ward = patient[`assigned_ward_${schemeIdx}`] || patient.assigned_ward || '';
+            const bed = patient[`assigned_bed_${schemeIdx}`] || patient.assigned_bed || '';
+            for (let k = 1; k <= 4; k++) {
+                patient[`status_bed_${k}`] = statusBed;
+                patient[`is_assigned_${k}`] = true;
+                patient[`assigned_ward_${k}`] = ward;
+                patient[`assigned_bed_${k}`] = bed;
+            }
+            patient.status_bed = statusBed;
+            patient.raw_status_bed = statusBed;
+            patient.is_assigned = true;
+            patient.assigned_ward = ward;
+            patient.assigned_bed = bed;
+            patient.is_manual_assigned = true;
+            patient.is_bed_locked = true;
+            this.showToast(`已鎖定「${patient.name || '病人'}」至 ${statusBed}；四個方案與後續自動排床都會保留此床位。`, 'success');
+        }
+
+        this.updateAllWardHighlights();
+        this.updateGlobalStatusBar();
+        this.renderAllTables();
+        this.manager.saveToLocalStorage();
     }
 
     /* ==========================================================================
@@ -1392,9 +1515,11 @@ class BedAnalyzerApp {
 
         let cellClass = 'scheme-cell editable-cell';
         if (isActive) cellClass += ' active-col';
+        const isLocked = this.isBedLocked(p);
 
         let content = '';
         if (isAssigned) {
+            if (isLocked) cellClass += ' locked';
             if (['192', '119', '129'].some(v => statusBed.includes(v))) {
                 cellClass += ' assigned';
                 content = `<span class="badge badge-vip">${statusBed}</span>`;
@@ -1416,7 +1541,10 @@ class BedAnalyzerApp {
         }
 
         const origIdx = p.row_idx !== undefined ? p.row_idx : (p.chart_no ? `'${p.chart_no}'` : 'null');
-        return `<td class="${cellClass}" title="雙擊可直接就地編輯排床${schemeIdx}" ondblclick="window.app.makeCellEditable(this, ${origIdx}, 'status_bed_${schemeIdx}')">${content}</td>`;
+        const lockTitle = isAssigned
+            ? (isLocked ? '點擊深綠色外框可解除床位鎖定；雙擊床位文字可編輯' : '點擊淺綠色外框可鎖定此床位；雙擊床位文字可編輯')
+            : `雙擊可直接就地編輯排床${schemeIdx}`;
+        return `<td class="${cellClass}" data-patient-row="${origIdx}" data-scheme-idx="${schemeIdx}" title="${lockTitle}" ondblclick="window.app.makeCellEditable(this, ${origIdx}, 'status_bed_${schemeIdx}')">${content}</td>`;
     }
 
     getPatientBedSortKey(p, schemeIdx, origIdx) {
@@ -2764,6 +2892,8 @@ class BedAnalyzerApp {
             const isAss = Boolean(newSt && !newSt.toLowerCase().includes('delay') && !['待排', '-', '無', '待'].includes(newSt));
             p.is_assigned = isAss;
             p.is_manual_assigned = isAss;
+            p.is_bed_locked = isAss;
+            delete p.bed_lock_restore;
             for (let k = 1; k <= 4; k++) {
                 p[`is_assigned_${k}`] = isAss;
                 p[`is_manual_assigned_${k}`] = isAss;
@@ -2933,6 +3063,12 @@ class BedAnalyzerApp {
         const icon = type === 'success' ? '✓' : (type === 'error' ? '❌' : (type === 'warning' ? '⚠️' : 'ℹ️'));
         toast.innerHTML = `<span style="font-size: 16px;">${icon}</span> <span style="white-space: pre-line;">${message}</span>`;
         this.toastContainer.appendChild(toast);
+
+        // 通知過多時只保留最新兩筆，避免提示訊息持續向上堆疊。
+        const visibleToasts = Array.from(this.toastContainer.querySelectorAll('.toast'));
+        while (visibleToasts.length > 2) {
+            visibleToasts.shift().remove();
+        }
 
         setTimeout(() => {
             toast.style.opacity = '0';
@@ -3189,9 +3325,9 @@ class BedAnalyzerApp {
                             <div class="rule-item-content">
                                 <ul>
                                     <li><strong>辨識來源</strong>：檢視病人名單之「聯絡/抗凝」、「抵達通知」、「其他備註」、「房型意願」四大欄位，若包含 EICU、ER 或「急診」字樣（精確詞邊界比對，排除 ERCP、ERBD、liver 等臨床處置或名詞誤判），即判定為急診病人。</li>
-                                    <li><strong>第一位階（最優先）</strong>：抵達通知包含「準時」二字之病人，優先比對主治醫師本床（步驟 1）。</li>
-                                    <li><strong>第二位階（次優先）</strong>：有指定主治醫師之急診病人（主治醫師欄位有醫師燈號者）。此病人群位階比所有沒有準時的病人要優先，但排在準時病人後面；排序方式亦先依房型意願比對主治醫師本床（步驟 1.5）。</li>
-                                    <li><strong>第三位階（一般待排）</strong>：若急診病人未指定主治醫師，位階與其他沒有準時的普通病人相同，依照「Delay 天數多者優先」依意願比對主治本床（步驟 2）。無主治醫師之急診病人因無本床，保留至後續借床步驟。</li>
+                                    <li><strong>第一位階（最優先）</strong>：抵達通知包含「準時」二字之病人，每個位階均最先排 1782 病人（其餘在配床醫師隨機，主治醫師不在醫師配床名冊者置於該位階最後處理），比對主治醫師本床（1782 比對本床時一併納入 1691/1699 符合房型之床位）。</li>
+                                    <li><strong>第二位階（次優先）</strong>：有指定主治醫師之急診病人（ER/EICU）。此病人群位階比所有沒有準時的病人優先，但排在準時病人後面；排序方式亦最先排 1782 病人（其餘在配床醫師隨機，不在配床者置底），比對主治醫師本床（1782 比對本床時一併納入 1691/1699 符合房型之床位）。</li>
+                                    <li><strong>第三位階（一般待排）</strong>：普通病人與未指定主治醫師之急診病人，同樣最先排 1782 病人（其餘在配床醫師隨機，不在配床者置底），依照「Delay 天數多者優先」比對主治本床（1782 比對本床時一併納入 1691/1699 符合房型之床位）。無主治醫師之急診病人因無本床，保留至後續借床步驟。</li>
                                 </ul>
                             </div>
                         </div>
@@ -3203,12 +3339,12 @@ class BedAnalyzerApp {
                             </div>
                             <div class="rule-item-content">
                                 <ul>
-                                    <li><strong>步驟 1</strong>：抵達通知中優先病人（僅限含「準時」二字）依意願比對主治醫師本床（本床優先，1782 無本床可借 1699/1691）。</li>
-                                    <li><strong>步驟 1.5</strong>：有主治醫師之急診優先病人（ER/EICU），位階優先於未準時病人，依意願比對主治醫師本床（1782 無本床可借 1699/1691）。</li>
-                                    <li><strong>步驟 2</strong>：剩餘待排病人（包含無主治急診病人與普通未準時病人，依照 Delay 天數多者優先）依意願比對主治醫師本床（確保全員本床在被借出前保留給自己病人）。</li>
+                                    <li><strong>步驟 1</strong>：抵達通知中優先病人（僅限含「準時」二字）依意願比對主治醫師本床（1782 最先排且納入 1691/1699 支援床，其他在配床醫師隨機，不在配床醫師置底）。</li>
+                                    <li><strong>步驟 1.5</strong>：有主治醫師之急診優先病人（ER/EICU），位階優先於未準時病人，依意願比對主治醫師本床（1782 最先排且納入 1691/1699 支援床，其他在配床醫師隨機，不在配床醫師置底）。</li>
+                                    <li><strong>步驟 2</strong>：剩餘待排病人（包含無主治急診病人與普通未準時病人）最先排 1782 病人（納入 1691/1699 支援床），再依 Delay 天數多者與隨機順序比對主治醫師本床；不在配床醫師置底。</li>
                                     <li><strong>步驟 3</strong>：步驟 1（準時）與步驟 1.5（急診優先）未排定本床之病人，向同病房其他主治醫師借床；優先填入同病房但「不是優先借床」之一般主治醫師床位。</li>
                                     <li><strong>步驟 4</strong>：剩餘所有未排定病人依序向同病房、跨病房借床（跨病房借床時，急診病人優先分配 Young V 醫師床位）；全院無合適空床則累加延後天數為 delay + 空格 + 數字。</li>
-                                    <li><strong>同位階排序與隨機原則</strong>：病人處於同位階時（如步驟 1 內、步驟 1.5 內、或步驟 2 同 delay 天數下），優先從<strong>校正後意願最少</strong>的病人開始排（MRV 最小剩餘意願啟發式）。校正後只有 1 種房型意願者，優先排<strong>只有 1</strong> 的病人，再排<strong>只有 2$</strong> 的病人，再排<strong>只有 2</strong> 與 <strong>只有 4</strong> 的病人；同條件下順序採隨機亂數排床。</li>
+                                    <li><strong>同位階排序與隨機原則</strong>：每個位階均優先處理 1782 病人；其餘在配床主治醫師採隨機順序公平排床；主治醫師不在醫師配床名單者一律放到該位階最後處理。同群內依 Delay 天數與<strong>校正後意願最少</strong>的病人優先（MRV 最小剩餘意願啟發式）。校正後只有 1 種房型意願者，優先排<strong>只有 1</strong> 的病人，再排<strong>只有 2$</strong> 的病人，再排<strong>只有 2</strong> 與 <strong>只有 4</strong> 的病人；同條件下順序採隨機亂數排床。</li>
                                 </ul>
                             </div>
                         </div>
@@ -3331,13 +3467,13 @@ class BedAnalyzerApp {
                         <div class="rule-item-box">
                             <div class="rule-item-header">
                                 <span class="rule-number-badge">規則 14</span>
-                                <span class="rule-item-title">1782 醫師病人優先於 1699、1691 醫師病人</span>
+                                <span class="rule-item-title">1782 醫師全位階最先排床與 1691、1699 床位納入可用床位</span>
                             </div>
                             <div class="rule-item-content">
                                 <ul>
-                                    <li><strong>第一輪準時情況</strong>：若 1782 醫師無本床但仍有準時病人，先搜尋並借用 1699 與 1691 之 124 空床，接續才考慮 1699 與 1691 的準時病人。</li>
-                                    <li><strong>非準時情況</strong>：亦由 1782 病人優先於 1699/1691 病人住院（1782 無本床時優先借用 124 病房 1699/1691 之空床）。</li>
-                                    <li><strong>Delay 天數比對</strong>：1782 病人與 1699 或 1691 相比視同 delay - 1 天（1782 享有 +1 天 delay 等效優勢且優先）。</li>
+                                    <li><strong>全位階最先排 1782</strong>：在每個位階（準時本床、急診本床、一般本床、以及各借床階段）中，均最優先排定 1782（黃怡翔）醫師之病人；其餘在配床主治醫師採隨機順序處理；主治醫師不在醫師配床名冊者一律移至該位階最後處理。</li>
+                                    <li><strong>本床比對納入 1691/1699 床位</strong>：1782 醫師比對本床時，1691（齊振達）與 1699（吳啟榮）醫師之符合房型床位亦一併納入 1782 的可用床位（1782 本人床位優先，不足時由 1691/1699 支援借用）。</li>
+                                    <li><strong>其他主治醫師隨機原則</strong>：除 1782 最先排之外，其餘有配床的主治醫師之間無固定特權階梯，同天數同條件下採隨機亂數公平排序。</li>
                                 </ul>
                             </div>
                         </div>

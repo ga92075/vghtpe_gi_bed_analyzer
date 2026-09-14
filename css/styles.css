@@ -849,6 +849,16 @@ body {
   color: #86efac;
 }
 
+.scheme-cell.assigned.locked {
+  background-color: #15803d;
+  color: #ffffff;
+}
+
+[data-theme="dark"] .scheme-cell.assigned.locked {
+  background-color: #166534;
+  color: #ffffff;
+}
+
 .scheme-cell.delayed {
   background-color: #fffbeb;
   color: #92400e;
@@ -1674,4 +1684,3 @@ body {
   font-weight: 700;
   color: var(--text-main);
 }
-
