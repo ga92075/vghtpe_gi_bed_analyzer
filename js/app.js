@@ -1347,6 +1347,39 @@ class BedAnalyzerApp {
         if (this.statAssignedPatients) this.statAssignedPatients.textContent = assignedPts;
         if (this.statPendingPatients) this.statPendingPatients.textContent = pendingPts;
         if (this.statGenderCount) this.statGenderCount.textContent = `男 ${maleCount} / 女 ${femaleCount}`;
+
+        this.updateSchemeVacancies(availableBeds, patients);
+    }
+
+    /** 更新主畫面與病人名單四個排床方案的剩餘空床數。 */
+    updateSchemeVacancies(availableBeds, patients) {
+        const availableBedKeys = new Set(availableBeds.map(b =>
+            `${String(b.ward || '').replace('A', '')}-${String(b.bed_num || '')}`
+        ));
+
+        for (let schemeIdx = 1; schemeIdx <= 4; schemeIdx++) {
+            const occupiedBedKeys = new Set();
+
+            patients.forEach(p => {
+                const isAssigned = p[`is_assigned_${schemeIdx}`] !== undefined
+                    ? p[`is_assigned_${schemeIdx}`]
+                    : p.is_assigned;
+                if (!isAssigned) return;
+
+                const ward = String(p[`assigned_ward_${schemeIdx}`] || p.assigned_ward || '').replace('A', '');
+                const bed = String(p[`assigned_bed_${schemeIdx}`] || p.assigned_bed || '');
+                const bedKey = `${ward}-${bed}`;
+
+                // 僅扣除原先列入可用空床池的床位；VIP／他科借床不影響此數字。
+                if (availableBedKeys.has(bedKey)) occupiedBedKeys.add(bedKey);
+            });
+
+            const vacancyText = `(空床:${Math.max(0, availableBeds.length - occupiedBedKeys.size)})`;
+            ['scheme-vacancy', 'patients-scheme-vacancy'].forEach(prefix => {
+                const element = document.getElementById(`${prefix}-${schemeIdx}`);
+                if (element) element.textContent = vacancyText;
+            });
+        }
     }
 
     /* ==========================================================================
