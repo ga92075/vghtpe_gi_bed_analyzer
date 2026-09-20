@@ -488,7 +488,8 @@ const ExcelPatientParser = {
                     else if (cText.includes('病歷')) colMap.chart_no = cIdx;
                     else if (cText.includes('姓名')) colMap.name = cIdx;
                     else if (cText.includes('性別')) colMap.gender = cIdx;
-                    else if (cText.includes('醫師') || cText.includes('代碼') || cText.includes('燈號')) colMap.doc_code = cIdx;
+                    else if (cText.includes('代碼') || cText.includes('燈號')) colMap.doc_code = cIdx;
+                    else if (cText.includes('主治') || cText.includes('醫師')) colMap.doctor = cIdx;
                     else if (cText.includes('診斷')) colMap.diagnosis = cIdx;
                     else if (cText.includes('房型') || cText.includes('意願')) colMap.bed_pref = cIdx;
                 }
@@ -497,7 +498,7 @@ const ExcelPatientParser = {
 
             const getVal = (key, defaultIdx) => {
                 const idx = colMap[key] !== undefined ? colMap[key] : defaultIdx;
-                return (idx < row.length && row[idx] !== null && row[idx] !== undefined) ? String(row[idx]).trim() : '';
+                return (idx >= 0 && idx < row.length && row[idx] !== null && row[idx] !== undefined) ? String(row[idx]).trim() : '';
             };
 
             const rawStatus = getVal('status', 0);
@@ -512,11 +513,19 @@ const ExcelPatientParser = {
             else if (gender === '女' || gender === '2') gender = 'F';
             else if (gender !== 'M' && gender !== 'F') gender = gender.startsWith('M') ? 'M' : (gender.startsWith('F') ? 'F' : 'M');
 
-            const docCode = getVal('doc_code', 8);
-            const diagnosis = getVal('diagnosis', 9);
-            const bedPref = getVal('bed_pref', 10);
+            let doctor = getVal('doctor', -1);
+            let docCode = getVal('doc_code', 8);
 
-            if (!name && !chartNo && !docCode) continue;
+            // 若只有單一欄位記錄醫師/燈號 (例如 1782 或 黃怡翔 或 1782黃怡翔)
+            if (!doctor && docCode && !/^\d+$/.test(docCode)) {
+                doctor = docCode.replace(/\d+/g, '').replace(/[\s\-_()]/g, '');
+            }
+            if (doctor && !docCode && /\d+/.test(doctor)) {
+                const mCode = doctor.match(/\d+/);
+                if (mCode) docCode = mCode[0];
+            }
+
+            if (!name && !chartNo && !docCode && !doctor) continue;
 
             const preassigned = this.parsePreassignedBed(rawStatus);
             let assignedWard = "";
@@ -573,7 +582,9 @@ const ExcelPatientParser = {
                 chart_no: chartNo,
                 name,
                 gender,
-                doc_code: docCode,
+                doctor: doctor || '',
+                doctor_name: doctor || '',
+                doc_code: docCode || '',
                 diagnosis,
                 bed_pref: bedPref,
                 normalized_pref: normalizedPref

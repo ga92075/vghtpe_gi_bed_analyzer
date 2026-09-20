@@ -165,12 +165,27 @@ class BedConfigManager {
 
     lookupDoctorByName(nameStr) {
         if (!nameStr || !this.data || !this.data.wards) return null;
-        const cleanName = String(nameStr).trim();
+        const cleanName = String(nameStr).trim().replace(/醫師$/, '');
+        if (!cleanName || ['無', '未指定', '-', '待定', '待查'].includes(cleanName)) return null;
+
+        // 1. 先精確比對全名
         for (const wInfo of Object.values(this.data.wards)) {
             for (const doc of (wInfo.doctors || [])) {
-                const dName = (doc.name || '').trim();
-                if (dName && (cleanName.includes(dName) || dName.includes(cleanName))) {
+                const dName = (doc.name || '').trim().replace(/醫師$/, '');
+                if (dName && dName === cleanName) {
                     return doc;
+                }
+            }
+        }
+
+        // 2. 次要包含比對 (字數 >= 2 避免單字誤判)
+        if (cleanName.length >= 2) {
+            for (const wInfo of Object.values(this.data.wards)) {
+                for (const doc of (wInfo.doctors || [])) {
+                    const dName = (doc.name || '').trim().replace(/醫師$/, '');
+                    if (dName && (cleanName.includes(dName) || dName.includes(cleanName))) {
+                        return doc;
+                    }
                 }
             }
         }
@@ -180,7 +195,7 @@ class BedConfigManager {
     isDoctorInBedConfig(codeStr, nameStr) {
         const cleanCode = String(codeStr || '').replace(/\D/g, '');
         if (cleanCode && this.lookupDoctorByCode(cleanCode)) return true;
-        const cleanName = String(nameStr || '').trim();
+        const cleanName = String(nameStr || '').trim().replace(/醫師$/, '');
         if (cleanName && this.lookupDoctorByName(cleanName)) return true;
         return false;
     }
@@ -440,6 +455,17 @@ class BedConfigManager {
         } else {
             this.testWardInputs = JSON.parse(JSON.stringify(BedConfigManager.DEFAULT_TEST_WARD_BEDS));
         }
+        // 確保 113 男2 測試床位為 16 17，自動修正舊快取中之 45
+        if (this.testWardInputs && this.testWardInputs["113"]) {
+            if (String(this.testWardInputs["113"]["男2"] || '').includes('45')) {
+                this.testWardInputs["113"]["男2"] = "16 17";
+            }
+        }
+        if (this.inputs && this.inputs["113"]) {
+            if (String(this.inputs["113"]["男2"] || '').includes('45')) {
+                this.inputs["113"]["男2"] = "16 17";
+            }
+        }
         this.patientFilePath = '';
         if (importPatients && payload.patient_data && payload.patient_data.patients) {
             this.patientData = payload.patient_data;
@@ -473,6 +499,19 @@ class BedConfigManager {
         }
 
         for (const p of pData.patients) {
+            if (!p.doctor && p.doc_code) {
+                const c = String(p.doc_code).replace(/\D/g, '');
+                const dObj = c ? this.lookupDoctorByCode(c) : null;
+                if (dObj && dObj.name) {
+                    p.doctor = dObj.name;
+                    p.doctor_name = dObj.name;
+                }
+            } else if (p.doctor && !p.doc_code) {
+                const dObj = this.lookupDoctorByName(p.doctor);
+                if (dObj && dObj.code) p.doc_code = dObj.code;
+            }
+            if (p.doctor && !p.doctor_name) p.doctor_name = p.doctor;
+
             const pClean = String(p.doc_code || '').replace(/\D/g, '') || (p.doctor ? nameToCode[p.doctor.trim()] : '');
             const statusBed = String(p.status_bed || '').trim();
             if (!statusBed || statusBed.toLowerCase().includes('delay') || statusBed.includes('待') || ['-', '無'].includes(statusBed)) continue;
@@ -1200,10 +1239,17 @@ class BedAssignmentEngine {
                     if (matchedCritIdx === -1) continue;
 
                     let wScore = 1000000.0;
-                    if (cleanDoc === this.DOC_1782) {
+                    const docClean = cleanDoc;
+                    const rawDocName = String(p.doctor || p.doctor_name || p.doc_name || '').trim();
+                    const docName = rawDocName.replace(/醫師$/, '').trim();
+                    const isInConfig = manager && typeof manager.isDoctorInBedConfig === 'function'
+                        ? (manager.isDoctorInBedConfig(docClean, rawDocName) || manager.isDoctorInBedConfig(docClean, docName))
+                        : true;
+
+                    if (docClean === this.DOC_1782 || docName.includes('黃怡翔')) {
                         wScore += 50000.0;
-                    } else if (manager && typeof manager.isDoctorInBedConfig === 'function' && !manager.isDoctorInBedConfig(cleanDoc, p.doctor_name || '')) {
-                        wScore -= 80000.0;
+                    } else if (!isInConfig) {
+                        wScore -= 500000.0; // 主治醫師不在配床名單者，大幅扣分確保排在同位階最後
                     }
 
                     if (isOwn) {
@@ -1346,18 +1392,37 @@ class BedAssignmentEngine {
                 for (const doc of (wVal.doctors || [])) {
                     const c = (doc.code || '').replace(/\D/g, '');
                     if (c) allocatedDocCodes.add(c);
-                    if (doc.name) allocatedDocNames.add(doc.name.trim());
+                    if (doc.name) {
+                        const nm = doc.name.trim();
+                        allocatedDocNames.add(nm);
+                        allocatedDocNames.add(nm.replace(/醫師$/, ''));
+                    }
                 }
             }
         }
 
         const isDoctorInAllocation = (p) => {
-            const cleanCode = String(p.doc_code || '').replace(/\D/g, '');
-            const docName = String(p.doctor_name || p.doc_name || '').trim();
+            const rawDocCode = String(p.doc_code || '').trim();
+            const cleanCode = rawDocCode.replace(/\D/g, '');
+            const rawDocName = String(p.doctor || p.doctor_name || p.doc_name || rawDocCode.replace(/[\d\s\-_()]/g, '') || '').trim();
+            const docName = rawDocName.replace(/醫師$/, '').trim();
+
             if (cleanCode && allocatedDocCodes.has(cleanCode)) return true;
+            if (rawDocName && allocatedDocNames.has(rawDocName)) return true;
             if (docName && allocatedDocNames.has(docName)) return true;
-            if (manager && typeof manager.isDoctorInBedConfig === 'function') {
-                return manager.isDoctorInBedConfig(cleanCode, docName);
+
+            if (manager) {
+                if (typeof manager.isDoctorInBedConfig === 'function') {
+                    if (manager.isDoctorInBedConfig(cleanCode, rawDocName)) return true;
+                    if (manager.isDoctorInBedConfig(cleanCode, docName)) return true;
+                }
+                if (typeof manager.lookupDoctorByCode === 'function' && cleanCode) {
+                    if (manager.lookupDoctorByCode(cleanCode)) return true;
+                }
+                if (typeof manager.lookupDoctorByName === 'function') {
+                    if (rawDocName && manager.lookupDoctorByName(rawDocName)) return true;
+                    if (docName && manager.lookupDoctorByName(docName)) return true;
+                }
             }
             return false;
         };
@@ -1383,8 +1448,12 @@ class BedAssignmentEngine {
         // 3. 主治醫師不在醫師配床名冊者，一律排在該位階最後處理 (docTier: 2)
         // 4. 同階層依 Delay 天數、校正後房型限制(MRV)與隨機規則排序
         const tierPrioritySortKey = (p) => {
-            const cleanDocCode = String(p.doc_code || '').replace(/\D/g, '');
-            const is1782 = (cleanDocCode === this.DOC_1782);
+            const rawDocCode = String(p.doc_code || '').trim();
+            const cleanDocCode = rawDocCode.replace(/\D/g, '');
+            const rawDocName = String(p.doctor || p.doctor_name || p.doc_name || rawDocCode.replace(/[\d\s\-_()]/g, '') || '').trim();
+            const docName = rawDocName.replace(/醫師$/, '').trim();
+            const is1782 = (cleanDocCode === this.DOC_1782) || (docName && (docName === '黃怡翔' || docName.includes('黃怡翔')));
+
             let docTier = 1;
             if (is1782) {
                 docTier = 0;
@@ -2027,7 +2096,12 @@ class BedAssignmentEngine {
         };
 
         // 分組三類基本病人群 (互斥集合)：無主治急診與普通病人同列第三位階。
-        const hasAttendingDoctor = (p) => Boolean(String(p.doc_code || '').replace(/\D/g, ''));
+        const hasAttendingDoctor = (p) => {
+            const cleanCode = String(p.doc_code || '').replace(/\D/g, '');
+            if (cleanCode) return true;
+            const docName = String(p.doctor || p.doctor_name || p.doc_name || '').trim();
+            return Boolean(docName && !['無', '未指定', '-', '待查', '待定'].includes(docName));
+        };
         const onTimePatients = multiKeySort(activePatients.filter(isPriorityArrival), tierPrioritySortKey);
         const erPatients = multiKeySort(activePatients.filter(p =>
             !isPriorityArrival(p) && this.isErEicuPatient(p) && hasAttendingDoctor(p)
@@ -2127,30 +2201,43 @@ class BedAssignmentEngine {
 
             for (const stg of stages) {
                 if (stg.list.length > 0 && pool.length > 0) {
-                    const matching = this.solveBipartiteMatching(stg.list, pool, manager, docHomeWards, proxyToLeaveDocs, youngVList);
-                    const matchedPairs = [];
-                    for (const [pIdx, bIdx] of Object.entries(matching)) {
-                        matchedPairs.push({ p: stg.list[parseInt(pIdx, 10)], b: pool[parseInt(bIdx, 10)] });
-                    }
-                    for (const pair of matchedPairs) {
-                        const p = pair.p;
-                        const matchedBed = pair.b;
-                        if (!pool.includes(matchedBed)) continue;
+                    // 同位階內：在配床名單之主治醫師病人先排；主治醫師不在配床表者，在同位階最後排
+                    const inAllocPts = stg.list.filter(p => isDoctorInAllocation(p));
+                    const outAllocPts = stg.list.filter(p => !isDoctorInAllocation(p));
+                    const subBatches = [
+                        { pts: inAllocPts, subName: stg.name },
+                        { pts: outAllocPts, subName: `${stg.name}(非配床醫師置底)` }
+                    ];
 
-                        const pClean = (p.doc_code || '').replace(/\D/g, '');
-                        const isOwn = (matchedBed.clean_doc_code === pClean);
-                        const isProxy = (proxyToLeaveDocs[pClean] || []).includes(matchedBed.clean_doc_code);
-                        let docInfo = "";
-                        if (isProxy) {
-                            docInfo = `代理請假醫師床位(${matchedBed.doctor_name})`;
-                        } else if (!isOwn) {
-                            const hWard = docHomeWards[pClean] || '';
-                            docInfo = (hWard && String(matchedBed.ward).replace('A', '') === hWard) ? `同病房借床(${matchedBed.doctor_name})` : `全域借床(${matchedBed.doctor_name})`;
-                        } else {
-                            docInfo = `主治醫師本床(${matchedBed.doctor_name})`;
+                    for (const batch of subBatches) {
+                        const batchPts = batch.pts.filter(p => !p.is_assigned);
+                        if (batchPts.length > 0 && pool.length > 0) {
+                            const matching = this.solveBipartiteMatching(batchPts, pool, manager, docHomeWards, proxyToLeaveDocs, youngVList);
+                            const matchedPairs = [];
+                            for (const [pIdx, bIdx] of Object.entries(matching)) {
+                                matchedPairs.push({ p: batchPts[parseInt(pIdx, 10)], b: pool[parseInt(bIdx, 10)] });
+                            }
+                            for (const pair of matchedPairs) {
+                                const p = pair.p;
+                                const matchedBed = pair.b;
+                                if (!pool.includes(matchedBed)) continue;
+
+                                const pClean = (p.doc_code || '').replace(/\D/g, '');
+                                const isOwn = (matchedBed.clean_doc_code === pClean);
+                                const isProxy = (proxyToLeaveDocs[pClean] || []).includes(matchedBed.clean_doc_code);
+                                let docInfo = "";
+                                if (isProxy) {
+                                    docInfo = `代理請假醫師床位(${matchedBed.doctor_name})`;
+                                } else if (!isOwn) {
+                                    const hWard = docHomeWards[pClean] || '';
+                                    docInfo = (hWard && String(matchedBed.ward).replace('A', '') === hWard) ? `同病房借床(${matchedBed.doctor_name})` : `全域借床(${matchedBed.doctor_name})`;
+                                } else {
+                                    docInfo = `主治醫師本床(${matchedBed.doctor_name})`;
+                                }
+
+                                assignBedToPatient(p, matchedBed, !isOwn, isProxy, docInfo, batch.subName);
+                            }
                         }
-
-                        assignBedToPatient(p, matchedBed, !isOwn, isProxy, docInfo, stg.name);
                     }
                 }
             }
@@ -2407,7 +2494,7 @@ class BedAssignmentEngine {
             gender_shortage_twin: {
                 key: 'gender_shortage_twin',
                 name: '方案 2 (雙空依性別缺額優先排法)',
-                badge: '🌟 推薦方案 (0 Delay)',
+                badge: '雙空性別調配 (0 Delay)',
                 description: '依全院男女缺額動態調配雙空房，將 2>2$ 改成 2$>2 優先媒合自費雙人床，達成 0 延後！',
                 report: rep2,
                 patients: pts2
@@ -2422,8 +2509,8 @@ class BedAssignmentEngine {
             },
             bipartite_after_step2: {
                 key: 'bipartite_after_step2',
-                name: '方案 4 (步驟2本床後全域二分圖匹配)',
-                badge: '⚖️ 兼顧本床與0 Delay',
+                name: '方案 4 (步驟2本床後全域二分圖匹配/推薦)',
+                badge: '🌟 推薦方案 (兼顧本床與 0 Delay)',
                 description: '步驟2前先保障主治醫師本床優先權，剩餘待排病人與空床再透過二分圖最佳流求解借床。',
                 report: rep4,
                 patients: pts4

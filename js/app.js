@@ -615,7 +615,13 @@ class BedAnalyzerApp {
             this.youngVInput.value = this.manager.getYoungVCodes();
         }
 
-        // 填入病房輸入格
+        // 填入病房輸入格 (並主動更正 113 舊快取中的 45 轉為 16 17)
+        const cur113M2 = String(this.manager.getInput('113', '男2') || '').trim();
+        if (cur113M2.includes('45')) {
+            const fixed113 = cur113M2.replace(/\b45\b/g, '17').replace(/\s+/g, ' ').trim();
+            this.manager.updateInput('113', '男2', fixed113.includes('16') ? fixed113 : '16 17');
+        }
+
         BedConfigManager.STANDARD_WARDS.forEach(w => {
             BedConfigManager.CATEGORIES.forEach(cat => {
                 const el = document.getElementById(`input-${w}-${cat}`);
@@ -1120,15 +1126,21 @@ class BedAnalyzerApp {
             patient.doc_code = newVal;
             const cleanDigits = newVal.replace(/\D/g, '');
             const doc = cleanDigits ? this.manager.lookupDoctorByCode(cleanDigits) : null;
-            if (doc) patient.doctor = doc.name;
+            if (doc) {
+                patient.doctor = doc.name;
+                patient.doctor_name = doc.name;
+            }
             this.renderAllTables();
             this.showToast(`已更新「${patient.name || '病人'}」醫師燈號為【${newVal}】${doc ? ` (${doc.name})` : ''}`, "success");
         } else if (colKey === 'doctor') {
             patient.doctor = newVal;
+            patient.doctor_name = newVal;
             const doc = this.manager.lookupDoctorByName(newVal);
-            if (doc) patient.doc_code = doc.code;
+            if (doc && doc.code) {
+                patient.doc_code = doc.code;
+            }
             this.renderAllTables();
-            this.showToast(`已更新「${patient.name || '病人'}」主治醫師為【${newVal}】`, "success");
+            this.showToast(`已更新「${patient.name || '病人'}」主治醫師為【${newVal}】${doc ? ` (${doc.code})` : ''}`, "success");
         } else {
             patient[colKey] = newVal;
             this.renderAllTables();
@@ -1627,7 +1639,7 @@ class BedAnalyzerApp {
             1: "方案 1 (原本排法/基準)",
             2: "方案 2 (雙空依性別缺額優先)",
             3: "方案 3 (全域二分圖最大匹配)",
-            4: "方案 4 (步驟2本床後全域二分圖匹配)"
+            4: "方案 4 (步驟2本床後全域二分圖/推薦)"
         };
         const name = schemeNames[schemeIdx] || `方案 ${schemeIdx}`;
 
@@ -1682,7 +1694,7 @@ class BedAnalyzerApp {
             1: "方案 1 (原本排法/基準)",
             2: "方案 2 (雙空依性別缺額優先)",
             3: "方案 3 (全域二分圖最大匹配)",
-            4: "方案 4 (步驟2本床後全域二分圖匹配)"
+            4: "方案 4 (步驟2本床後全域二分圖/推薦)"
         };
         const schemeName = schemeNames[schemeIdx] || `方案 ${schemeIdx}`;
         const fieldKey = `status_bed_${schemeIdx}`;
@@ -1781,7 +1793,7 @@ class BedAnalyzerApp {
 
         let patients = (this.manager.patientData && this.manager.patientData.patients) ? [...this.manager.patientData.patients] : [];
         if (patients.length === 0) {
-            this.livePatientsTbody.innerHTML = `<tr><td colspan="11" style="text-align:center; padding: 24px; color: var(--text-dim);">目前尚無入院病人資料，請點擊上方按鈕導入 Excel 或從剪貼簿貼上</td></tr>`;
+            this.livePatientsTbody.innerHTML = `<tr><td colspan="12" style="text-align:center; padding: 24px; color: var(--text-dim);">目前尚無入院病人資料，請點擊上方按鈕導入 Excel 或從剪貼簿貼上</td></tr>`;
             return;
         }
 
@@ -1816,6 +1828,12 @@ class BedAnalyzerApp {
                 <td class="editable-cell" title="雙擊可直接就地編輯房型意願" ondblclick="window.app.makeCellEditable(this, ${origIdx}, 'bed_pref')"><span style="font-family: var(--font-mono); font-size: 11px;">${p.bed_pref || ''}</span></td>
                 <td class="editable-cell" title="雙擊可直接就地編輯校正後意願" ondblclick="window.app.makeCellEditable(this, ${origIdx}, 'normalized_pref')"><code style="font-weight: 700; color: #1e40af;">${p.normalized_pref || BedAssignmentEngine.getNormalizedPreference(p.bed_pref || '')}</code></td>
                 <td class="editable-cell" title="雙擊可直接就地編輯抵達通知" ondblclick="window.app.makeCellEditable(this, ${origIdx}, 'arrival')"><small>${p.arrival || ''}</small></td>
+                <td style="text-align: center; white-space: nowrap;">
+                    <div style="display: inline-flex; gap: 4px; align-items: center; justify-content: center;">
+                        <button class="btn btn-primary btn-sm" onclick="window.app.insertPatientBefore(${origIdx})" title="在此病人前方直接插入空白列 (可雙擊打字)">➕ 插入</button>
+                        <button class="btn btn-danger btn-sm" onclick="window.app.deletePatient(${origIdx})" title="直接刪除此病人 (可按上一步復原)">🗑️ 刪除</button>
+                    </div>
+                </td>
             `;
             this.livePatientsTbody.appendChild(tr);
         });
@@ -1900,8 +1918,11 @@ class BedAnalyzerApp {
                 <td class="editable-cell" title="雙擊可直接就地編輯診斷與處置" ondblclick="window.app.makeCellEditable(this, ${origIdx}, 'diagnosis')"><small>${p.diagnosis || ''}</small></td>
                 <td class="editable-cell" title="雙擊可直接就地編輯房型意願" ondblclick="window.app.makeCellEditable(this, ${origIdx}, 'bed_pref')"><span style="font-family: var(--font-mono); font-size: 11px;">${p.bed_pref || ''}</span></td>
                 <td class="editable-cell" title="雙擊可直接就地編輯校正後房型意願" ondblclick="window.app.makeCellEditable(this, ${origIdx}, 'normalized_pref')" style="text-align: center;"><code style="font-weight: 700; color: #1e40af;">${p.normalized_pref || BedAssignmentEngine.getNormalizedPreference(p.bed_pref || '')}</code></td>
-                <td style="text-align: center;">
-                    <button class="btn btn-secondary btn-sm" onclick="window.app.openPatientEditModal(${origIdx})">✏️ 編輯</button>
+                <td style="text-align: center; white-space: nowrap;">
+                    <div style="display: inline-flex; gap: 4px; align-items: center; justify-content: center;">
+                        <button class="btn btn-primary btn-sm" onclick="window.app.insertPatientBefore(${origIdx})" title="在此病人前方直接插入空白列 (可雙擊打字)">➕ 插入</button>
+                        <button class="btn btn-danger btn-sm" onclick="window.app.deletePatient(${origIdx})" title="直接刪除此病人 (可按上一步復原)">🗑️ 刪除</button>
+                    </div>
                 </td>
             `;
             this.fullPatientsTbody.appendChild(tr);
@@ -2626,21 +2647,33 @@ class BedAnalyzerApp {
             );
         };
 
-        let testBeds = this.manager?.testWardInputs;
-        if (!hasAnyBed(testBeds)) {
-            testBeds = this.manager?.data?.test_ward_inputs;
+        let testBeds = BedConfigManager.DEFAULT_TEST_WARD_BEDS;
+        if (this.manager?.testWardInputs && hasAnyBed(this.manager.testWardInputs)) {
+            testBeds = JSON.parse(JSON.stringify(this.manager.testWardInputs));
+        } else if (this.manager?.data?.test_ward_inputs && hasAnyBed(this.manager.data.test_ward_inputs)) {
+            testBeds = JSON.parse(JSON.stringify(this.manager.data.test_ward_inputs));
+        } else if (this.manager?.data?.ward_category_inputs && hasAnyBed(this.manager.data.ward_category_inputs)) {
+            testBeds = JSON.parse(JSON.stringify(this.manager.data.ward_category_inputs));
         }
-        if (!hasAnyBed(testBeds)) {
-            testBeds = this.manager?.data?.ward_category_inputs;
+
+        // 強制確保 113 男2 測試床位為 16 17 (清除 45 舊快取)
+        if (testBeds["113"]) {
+            let m2 = String(testBeds["113"]["男2"] || '').trim();
+            if (m2.includes('45') || !m2) {
+                testBeds["113"]["男2"] = "16 17";
+            }
         }
-        if (!hasAnyBed(testBeds)) {
-            testBeds = BedConfigManager.DEFAULT_TEST_WARD_BEDS;
+        if (this.manager.testWardInputs && this.manager.testWardInputs["113"]) {
+            this.manager.testWardInputs["113"]["男2"] = "16 17";
         }
 
         BedConfigManager.STANDARD_WARDS.forEach(w => {
             const wBeds = testBeds[w] || {};
             BedConfigManager.CATEGORIES.forEach(cat => {
-                const val = wBeds[cat] || '';
+                let val = wBeds[cat] || '';
+                if (w === '113' && cat === '男2' && (val.includes('45') || !val)) {
+                    val = '16 17';
+                }
                 this.manager.updateInput(w, cat, val);
                 const el = document.getElementById(`input-${w}-${cat}`);
                 if (el) el.value = val;
@@ -2651,7 +2684,7 @@ class BedAnalyzerApp {
         this.renderAllTables();
         this.updateGlobalStatusBar();
         this.manager.saveToLocalStorage();
-        this.showToast("🧪 已成功填入測試用床位資訊！隨時可按「↩ 上一步」恢復原狀。", "success");
+        this.showToast("🧪 已成功填入測試用床位資訊 (113-16, 113-17)！隨時可按「↩ 上一步」恢復原狀。", "success");
     }
 
     clearAllBeds() {
@@ -2778,12 +2811,21 @@ class BedAnalyzerApp {
     }
 
     /* ==========================================================================
-       病人編輯模態框
+       病人編輯、插入與刪除模態框操作
        ========================================================================== */
     openPatientEditModal(rowIdx) {
         const patients = (this.manager.patientData && this.manager.patientData.patients) ? this.manager.patientData.patients : [];
+        const titleEl = document.getElementById('patient-modal-title');
+        const saveBtn = document.getElementById('btn-save-patient-modal');
+        const quickBlankBtn = document.getElementById('btn-patient-quick-blank');
+        const insertBeforeEl = document.getElementById('edit-patient-insert-before');
+        if (insertBeforeEl) insertBeforeEl.value = '';
+        if (quickBlankBtn) quickBlankBtn.style.display = 'none';
+
         if (rowIdx === -1) {
-            // 新增病人
+            // 新增病人 (加入至名單末端)
+            if (titleEl) titleEl.textContent = '➕ 新增入院病人 (加入至名單末端)';
+            if (saveBtn) saveBtn.textContent = '➕ 確認新增';
             document.getElementById('edit-patient-row-idx').value = -1;
             document.getElementById('edit-patient-name').value = '';
             document.getElementById('edit-patient-chart-no').value = '';
@@ -2792,7 +2834,7 @@ class BedAnalyzerApp {
             document.getElementById('edit-patient-status-bed').value = '';
             document.getElementById('edit-patient-bed-pref').value = '';
             document.getElementById('edit-patient-normalized-pref').value = '';
-            document.getElementById('edit-patient-arrival').value = '準時';
+            document.getElementById('edit-patient-arrival').value = '';
             document.getElementById('edit-patient-diagnosis').value = '';
             document.getElementById('edit-patient-contact').value = '';
             this.patientEditModal.classList.add('show');
@@ -2802,6 +2844,8 @@ class BedAnalyzerApp {
         const p = patients.find(x => (x.row_idx === rowIdx || patients.indexOf(x) + 1 === rowIdx));
         if (!p) return;
 
+        if (titleEl) titleEl.textContent = `✏️ 編輯第 ${rowIdx} 筆病人入院資訊`;
+        if (saveBtn) saveBtn.textContent = '儲存修改';
         document.getElementById('edit-patient-row-idx').value = rowIdx;
         document.getElementById('edit-patient-name').value = p.name || '';
         document.getElementById('edit-patient-chart-no').value = p.chart_no || '';
@@ -2817,19 +2861,191 @@ class BedAnalyzerApp {
         this.patientEditModal.classList.add('show');
     }
 
+    /**
+     * 開啟在指定病人前方插入病人的視窗
+     */
+    openPatientInsertModal(targetRowIdx) {
+        const patients = (this.manager.patientData && this.manager.patientData.patients) ? this.manager.patientData.patients : [];
+        const targetP = patients.find(x => (x.row_idx === targetRowIdx || patients.indexOf(x) + 1 === targetRowIdx));
+        const targetName = targetP && targetP.name ? `【${targetP.name}】` : '';
+
+        const titleEl = document.getElementById('patient-modal-title');
+        if (titleEl) titleEl.textContent = `➕ 插入新病人 (插入於第 ${targetRowIdx} 筆 ${targetName} 前方)`;
+
+        const saveBtn = document.getElementById('btn-save-patient-modal');
+        if (saveBtn) saveBtn.textContent = '➕ 確認插入';
+
+        const quickBlankBtn = document.getElementById('btn-patient-quick-blank');
+        if (quickBlankBtn) quickBlankBtn.style.display = 'inline-flex';
+
+        document.getElementById('edit-patient-row-idx').value = -1;
+        const insertBeforeEl = document.getElementById('edit-patient-insert-before');
+        if (insertBeforeEl) insertBeforeEl.value = targetRowIdx;
+
+        document.getElementById('edit-patient-name').value = '';
+        document.getElementById('edit-patient-chart-no').value = '';
+        document.getElementById('edit-patient-gender').value = 'M';
+        document.getElementById('edit-patient-doc-code').value = '';
+        document.getElementById('edit-patient-status-bed').value = '';
+        document.getElementById('edit-patient-bed-pref').value = '';
+        document.getElementById('edit-patient-normalized-pref').value = '';
+        document.getElementById('edit-patient-arrival').value = '';
+        document.getElementById('edit-patient-diagnosis').value = '';
+        document.getElementById('edit-patient-contact').value = '';
+
+        this.patientEditModal.classList.add('show');
+    }
+
+    /**
+     * 從彈窗直接插入空白病人列，方便就地雙擊打字
+     */
+    quickInsertBlankPatient() {
+        const insertBeforeEl = document.getElementById('edit-patient-insert-before');
+        const targetRowIdx = insertBeforeEl && insertBeforeEl.value ? parseInt(insertBeforeEl.value, 10) : null;
+        this.closeModal('patient-edit-modal');
+        this.insertPatientBefore(targetRowIdx, null);
+    }
+
+    /**
+     * 刪除指定病人 (直接刪除，免跳提醒方框，支援上一步復原)
+     */
+    deletePatient(rowIdx) {
+        if (!this.manager.patientData || !this.manager.patientData.patients) {
+            this.showToast("目前尚無病人資料可刪除", "warning");
+            return;
+        }
+        const patients = this.manager.patientData.patients;
+        const pIndex = patients.findIndex(x => (x.row_idx === rowIdx || patients.indexOf(x) + 1 === rowIdx));
+        if (pIndex === -1) {
+            this.showToast("找不到欲刪除的病人資料", "warning");
+            return;
+        }
+        const p = patients[pIndex];
+        const pName = p.name ? `「${p.name}」` : `第 ${rowIdx} 筆病人`;
+
+        this.pushUndoSnapshot();
+        patients.splice(pIndex, 1);
+
+        // 重新為剩餘病人重新編列序號 row_idx (1 ~ N)
+        patients.forEach((item, idx) => {
+            item.row_idx = idx + 1;
+        });
+
+        this.updateAllWardHighlights();
+        this.renderAllTables();
+        this.updateGlobalStatusBar();
+        this.manager.saveToLocalStorage();
+        this.showToast(`已刪除病人 ${pName}！(可隨時按「↩ 上一步」復原)`, "info");
+    }
+
+    /**
+     * 插入病人在目標病人前方
+     */
+    insertPatientBefore(targetRowIdx, patientData = null) {
+        if (!this.manager.patientData) {
+            this.manager.patientData = { file_name: '', parsed_at: '', patients: [] };
+        }
+        if (!this.manager.patientData.patients) {
+            this.manager.patientData.patients = [];
+        }
+        const patients = this.manager.patientData.patients;
+
+        let targetIdx = -1;
+        if (targetRowIdx !== null && targetRowIdx !== undefined) {
+            targetIdx = patients.findIndex(x => (x.row_idx === targetRowIdx || patients.indexOf(x) + 1 === targetRowIdx));
+        }
+        if (targetIdx === -1) {
+            targetIdx = patients.length;
+        }
+
+        this.pushUndoSnapshot();
+
+        const p = patientData ? { ...patientData } : {
+            name: '',
+            chart_no: '',
+            gender: 'M',
+            doc_code: '',
+            bed_pref: '',
+            normalized_pref: '',
+            arrival: '',
+            diagnosis: '',
+            contact: '',
+            status_bed: ''
+        };
+
+        p.gender = p.gender || 'M';
+        p.bed_pref = p.bed_pref || '';
+        p.normalized_pref = p.normalized_pref || (typeof BedAssignmentEngine !== 'undefined' ? BedAssignmentEngine.getNormalizedPreference(p.bed_pref) : p.bed_pref);
+        p.arrival = p.arrival || '';
+        p.status_bed = p.status_bed || '';
+        p.raw_status_bed = p.status_bed;
+        p.initial_delay_days = (typeof ExcelPatientParser !== 'undefined')
+            ? ExcelPatientParser.extractDelayDays(p.status_bed)
+            : 0;
+
+        if (p.doc_code) {
+            const cleanDigits = String(p.doc_code).replace(/\D/g, '');
+            const docObj = cleanDigits ? this.manager.lookupDoctorByCode(cleanDigits) : null;
+            if (docObj) {
+                p.doctor = docObj.name;
+                p.doctor_name = docObj.name;
+            }
+        }
+
+        const isAss = Boolean(p.status_bed && !p.status_bed.toLowerCase().includes('delay') && !['待排', '-', '無', '待'].includes(p.status_bed));
+        p.is_assigned = isAss;
+        p.is_manual_assigned = isAss;
+        p.is_bed_locked = isAss;
+
+        for (let k = 1; k <= 4; k++) {
+            if (p[`status_bed_${k}`] === undefined) p[`status_bed_${k}`] = p.status_bed;
+            if (p[`is_assigned_${k}`] === undefined) p[`is_assigned_${k}`] = isAss;
+            if (p[`is_manual_assigned_${k}`] === undefined) p[`is_manual_assigned_${k}`] = isAss;
+        }
+
+        patients.splice(targetIdx, 0, p);
+
+        // 重新為全體病人編列序號 row_idx (1 ~ N)
+        patients.forEach((item, idx) => {
+            item.row_idx = idx + 1;
+        });
+
+        this.updateAllWardHighlights();
+        this.renderAllTables();
+        this.updateGlobalStatusBar();
+        this.manager.saveToLocalStorage();
+
+        const pDesc = p.name ? `「${p.name}」` : `空白病人`;
+        this.showToast(`已於第 ${targetIdx + 1} 列插入${pDesc}！雙擊欄位即可直接打字，或按「↩ 上一步」復原。`, "success");
+    }
+
     savePatientEdit() {
         this.pushUndoSnapshot();
         const rowIdx = parseInt(document.getElementById('edit-patient-row-idx').value, 10);
         if (!this.manager.patientData) {
-            this.manager.patientData = { patients: [] };
+            this.manager.patientData = { file_name: '', parsed_at: '', patients: [] };
+        }
+        if (!this.manager.patientData.patients) {
+            this.manager.patientData.patients = [];
         }
         const patients = this.manager.patientData.patients;
 
         let p = null;
         const isNew = (rowIdx === -1);
+        const insertBeforeVal = document.getElementById('edit-patient-insert-before') ? document.getElementById('edit-patient-insert-before').value : '';
+        const insertBeforeRowIdx = insertBeforeVal ? parseInt(insertBeforeVal, 10) : null;
+
         if (isNew) {
-            p = { row_idx: patients.length + 1 };
-            patients.push(p);
+            p = {};
+            let targetIdx = -1;
+            if (insertBeforeRowIdx !== null && !isNaN(insertBeforeRowIdx)) {
+                targetIdx = patients.findIndex(x => (x.row_idx === insertBeforeRowIdx || patients.indexOf(x) + 1 === insertBeforeRowIdx));
+            }
+            if (targetIdx !== -1) {
+                patients.splice(targetIdx, 0, p);
+            } else {
+                patients.push(p);
+            }
         } else {
             p = patients.find(x => (x.row_idx === rowIdx || patients.indexOf(x) + 1 === rowIdx));
             if (!p) return;
@@ -2842,7 +3058,7 @@ class BedAnalyzerApp {
         p.bed_pref = document.getElementById('edit-patient-bed-pref').value.trim();
 
         const userNorm = document.getElementById('edit-patient-normalized-pref').value.trim();
-        p.normalized_pref = userNorm || BedAssignmentEngine.getNormalizedPreference(p.bed_pref);
+        p.normalized_pref = userNorm || (typeof BedAssignmentEngine !== 'undefined' ? BedAssignmentEngine.getNormalizedPreference(p.bed_pref) : p.bed_pref);
 
         p.arrival = document.getElementById('edit-patient-arrival').value.trim();
         p.diagnosis = document.getElementById('edit-patient-diagnosis').value.trim();
@@ -2908,14 +3124,32 @@ class BedAnalyzerApp {
                     p[`assigned_bed_${k}`] = bNum;
                 }
             }
+        } else if (isNew) {
+            p.status_bed = '';
+            p.raw_status_bed = '';
+            p.initial_delay_days = 0;
+            p.is_assigned = false;
+            p.is_manual_assigned = false;
+            p.is_bed_locked = false;
+            for (let k = 1; k <= 4; k++) {
+                p[`status_bed_${k}`] = '';
+                p[`is_assigned_${k}`] = false;
+                p[`is_manual_assigned_${k}`] = false;
+            }
         }
+
+        // 重新重編全體 row_idx (1 ~ N)
+        patients.forEach((item, idx) => {
+            item.row_idx = idx + 1;
+        });
 
         this.closeModal('patient-edit-modal');
         this.updateAllWardHighlights();
         this.renderAllTables();
         this.updateGlobalStatusBar();
         this.manager.saveToLocalStorage();
-        this.showToast(`已儲存病人 ${p.name || ''} 的資料，再次點擊「自動排床」將依此最新資料重新排床！`, "success");
+        const actionDesc = isNew ? (insertBeforeRowIdx ? '插入' : '新增') : '修改';
+        this.showToast(`已${actionDesc}病人 ${p.name || ''} 的資料，再次點擊「自動排床」將依此最新資料重新排床！`, "success");
     }
 
     /* ==========================================================================
@@ -3105,9 +3339,9 @@ class BedAnalyzerApp {
                 tip: "👉 點擊標題：左側病房將以此方案著色顯示；📋 點擊複製：直向複製全體排床結果"
             },
             2: {
-                title: "方案 2：雙空依性別缺額優先 (推薦)",
-                badge: "🌟 推薦方案 (0 Delay)",
-                badgeColor: "#059669",
+                title: "方案 2：雙空依性別缺額優先",
+                badge: "雙空性別調配 (0 Delay)",
+                badgeColor: "#0d9488",
                 desc: "全面分析全院男女性別缺額，動態調配並鎖定雙空房性別，極大化病床利用率。",
                 rules: [
                     "意願可自費者將 2>2$ 校正為 2$>2，優先媒合差額雙人床 (榮民雙人差額補助 2$>2>4)",
@@ -3129,9 +3363,9 @@ class BedAnalyzerApp {
                 tip: "👉 點擊標題：左側病房將以此方案著色顯示；📋 點擊複製：直向複製全體排床結果"
             },
             4: {
-                title: "方案 4：步驟2本床後全域二分圖匹配",
-                badge: "⚖️ 兼顧本床與 0 Delay",
-                badgeColor: "#7c3aed",
+                title: "方案 4：步驟2本床後全域二分圖匹配 (推薦)",
+                badge: "🌟 推薦方案 (兼顧本床與 0 Delay)",
+                badgeColor: "#059669",
                 desc: "步驟 2 前嚴格保障主治醫師專屬本床優先權，後續借床交由全域二分圖求解最佳借床。",
                 rules: [
                     "步驟 2 前嚴格保障主治醫師專屬本床優先權 (抵達、急診、常規本床優先)",
@@ -3263,10 +3497,10 @@ class BedAnalyzerApp {
                             </ul>
                         </div>
 
-                        <div class="scheme-card" style="border-top: 3px solid #059669;">
+                        <div class="scheme-card" style="border-top: 3px solid #0d9488;">
                             <div class="scheme-card-header">
                                 <span class="scheme-card-title">方案 2：雙空依性別缺額優先</span>
-                                <span class="scheme-card-badge" style="background: #059669;">🌟 推薦方案</span>
+                                <span class="scheme-card-badge" style="background: #0d9488;">雙空性別調配</span>
                             </div>
                             <div class="scheme-card-body">
                                 全面分析全院男女性別缺額，動態調配並鎖定雙空房性別，極大化病床利用率。
@@ -3293,10 +3527,10 @@ class BedAnalyzerApp {
                             </ul>
                         </div>
 
-                        <div class="scheme-card" style="border-top: 3px solid #7c3aed;">
+                        <div class="scheme-card" style="border-top: 3px solid #059669;">
                             <div class="scheme-card-header">
-                                <span class="scheme-card-title">方案 4：步驟2後全域二分圖</span>
-                                <span class="scheme-card-badge" style="background: #7c3aed;">⚖️ 兼顧本床</span>
+                                <span class="scheme-card-title">方案 4：步驟2後全域二分圖 (推薦)</span>
+                                <span class="scheme-card-badge" style="background: #059669;">🌟 推薦方案</span>
                             </div>
                             <div class="scheme-card-body">
                                 步驟 2 前保障主治醫師專屬本床，後續借床交由全域二分圖求解最佳借床。

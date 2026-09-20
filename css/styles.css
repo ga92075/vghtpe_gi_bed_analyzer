@@ -244,9 +244,10 @@ body {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  max-width: 1920px;
+  max-width: 1800px;
   width: 100%;
   margin: 0 auto;
+  box-sizing: border-box;
 }
 
 .tab-pane {
@@ -314,13 +315,22 @@ body {
    ========================================================================== */
 .main-split-container {
   display: grid;
-  grid-template-columns: 820px 1fr;
+  grid-template-columns: 530px minmax(0, 1fr);
   gap: 12px;
   align-items: stretch;
   flex: 1;
+  width: 100%;
+  min-width: 0;
 }
 
-@media (max-width: 1360px) {
+@media (min-width: 1680px) {
+  .main-split-container {
+    grid-template-columns: 540px minmax(0, 1fr);
+    gap: 14px;
+  }
+}
+
+@media (max-width: 1180px) {
   .main-split-container {
     grid-template-columns: 1fr;
   }
@@ -336,11 +346,11 @@ body {
 .ward-card {
   border-radius: var(--radius-md);
   border: 1px solid;
-  padding: 8px 10px;
+  padding: 7px 9px;
   box-shadow: var(--shadow-sm);
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 5px;
   transition: var(--transition);
 }
 
@@ -372,17 +382,17 @@ body {
 .ward-card-header {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
 }
 
 .ward-badge {
-  width: 54px;
-  height: 44px;
+  width: 50px;
+  height: 42px;
   border-radius: var(--radius-sm);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 18px;
+  font-size: 17px;
   font-weight: 800;
   color: #000000;
   letter-spacing: -0.02em;
@@ -398,20 +408,20 @@ body {
 .ward-input-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 4px 10px;
+  gap: 3px 8px;
   flex: 1;
 }
 
 .category-input-group {
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: 4px;
 }
 
 .category-label {
-  font-size: 12px;
+  font-size: 11.5px;
   font-weight: 700;
-  width: 34px;
+  width: 32px;
   text-align: right;
   flex-shrink: 0;
 }
@@ -629,13 +639,13 @@ body {
 .ward-stats-row {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
 }
 
 .stat-pill {
-  font-size: 11px;
+  font-size: 10.5px;
   font-weight: 700;
-  padding: 2px 6px;
+  padding: 1px 5px;
   border-radius: var(--radius-sm);
   border: 1px solid rgba(0, 0, 0, 0.15);
   background: rgba(255, 255, 255, 0.75);
@@ -727,6 +737,10 @@ body {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  min-width: 0;
+  max-width: 1240px;
+  width: 100%;
+  flex: 1;
 }
 
 .panel-header {
@@ -771,10 +785,10 @@ body {
 .scheme-th {
   text-align: center;
   vertical-align: top;
-  padding: 4px 6px !important;
+  padding: 2px 2px !important;
   background: #f8fafc;
   border-right: 1px solid var(--border-color);
-  min-width: 100px;
+  min-width: 66px;
 }
 
 .scheme-th.active-scheme {
@@ -784,16 +798,17 @@ body {
 
 .scheme-copy-btn {
   width: 100%;
-  padding: 2px 4px;
-  font-size: 11px;
+  padding: 1px 2px;
+  font-size: 10.5px;
   font-weight: 700;
   background-color: #0284c7;
   color: #ffffff;
   border: 1px solid #0369a1;
   border-radius: var(--radius-sm);
   cursor: pointer;
-  margin-bottom: 3px;
+  margin-bottom: 2px;
   transition: var(--transition);
+  white-space: nowrap;
 }
 .scheme-copy-btn:hover {
   background-color: #0369a1;
@@ -803,11 +818,12 @@ body {
   cursor: pointer;
   display: block;
   font-weight: 700;
-  font-size: 12px;
+  font-size: 11px;
   color: var(--text-main);
-  padding: 2px 4px;
+  padding: 1px 1px;
   border-radius: var(--radius-sm);
   transition: var(--transition);
+  white-space: nowrap;
 }
 .scheme-title-clickable:hover {
   background: rgba(2, 132, 199, 0.1);
@@ -821,17 +837,17 @@ body {
 
 .scheme-vacancy {
   white-space: nowrap;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 700;
   color: var(--text-muted);
 }
 
-/* 排床結果儲存格樣式 (靠左對齊) */
+/* 排床結果儲存格樣式 (置中對齊且緊湊) */
 .scheme-cell {
-  text-align: left;
+  text-align: center;
   font-size: 12px;
   border-right: 1px solid var(--border-light);
-  padding: 5px 8px !important;
+  padding: 3px 2px !important;
 }
 
 .scheme-cell.active-col {
@@ -982,7 +998,7 @@ body {
   background: var(--bg-subtle);
   color: var(--text-muted);
   font-weight: 700;
-  padding: 6px 8px;
+  padding: 4px 5px;
   border-bottom: 2px solid var(--border-color);
   position: sticky;
   top: 0;
@@ -991,7 +1007,7 @@ body {
 }
 
 .data-table td {
-  padding: 6px 8px;
+  padding: 4px 5px;
   border-bottom: 1px solid var(--border-light);
   white-space: nowrap;
 }
@@ -1008,8 +1024,8 @@ body {
 .badge {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
-  padding: 2px 6px;
+  gap: 2px;
+  padding: 1.5px 5px;
   border-radius: var(--radius-full);
   font-size: 11px;
   font-weight: 700;
@@ -1035,12 +1051,15 @@ body {
 }
 
 .badge-delayed {
-  background-color: var(--danger-light);
-  color: #7f1d1d;
-  border: 1px solid rgba(220, 38, 38, 0.3);
+  background-color: #fde68a;
+  color: #854d0e;
+  border: 1px solid #f59e0b;
+  font-weight: 700;
 }
 [data-theme="dark"] .badge-delayed {
-  color: #fca5a5;
+  background-color: rgba(245, 158, 11, 0.28);
+  color: #fef08a;
+  border: 1px solid rgba(245, 158, 11, 0.5);
 }
 
 .badge-vip {
