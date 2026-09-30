@@ -1419,11 +1419,19 @@ class BedAnalyzerApp {
 
         for (let schemeIdx = 1; schemeIdx <= 4; schemeIdx++) {
             const occupiedBedKeys = new Set();
+            let delayCount = 0;
 
             patients.forEach(p => {
+                const statusBed = String(p[`status_bed_${schemeIdx}`] !== undefined ? p[`status_bed_${schemeIdx}`] : (p.status_bed || '')).trim();
                 const isAssigned = p[`is_assigned_${schemeIdx}`] !== undefined
                     ? p[`is_assigned_${schemeIdx}`]
                     : p.is_assigned;
+
+                // 統計 delay 數量：狀態欄位包含 delay 或 延後
+                if (statusBed.toLowerCase().includes('delay') || statusBed.includes('延後')) {
+                    delayCount++;
+                }
+
                 if (!isAssigned) return;
 
                 const ward = String(p[`assigned_ward_${schemeIdx}`] || p.assigned_ward || '').replace('A', '');
@@ -1434,7 +1442,8 @@ class BedAnalyzerApp {
                 if (countableBedKeys.has(bedKey)) occupiedBedKeys.add(bedKey);
             });
 
-            const vacancyText = `(空床:${Math.max(0, countableBedKeys.size - occupiedBedKeys.size)})`;
+            const emptyBeds = Math.max(0, countableBedKeys.size - occupiedBedKeys.size);
+            const vacancyText = `(空床:${emptyBeds} delay:${delayCount})`;
             ['scheme-vacancy', 'patients-scheme-vacancy'].forEach(prefix => {
                 const element = document.getElementById(`${prefix}-${schemeIdx}`);
                 if (element) element.textContent = vacancyText;

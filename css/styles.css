@@ -816,7 +816,10 @@ body {
 
 .scheme-title-clickable {
   cursor: pointer;
-  display: block;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
   font-weight: 700;
   font-size: 11px;
   color: var(--text-main);
@@ -824,6 +827,7 @@ body {
   border-radius: var(--radius-sm);
   transition: var(--transition);
   white-space: nowrap;
+  line-height: 1.25;
 }
 .scheme-title-clickable:hover {
   background: rgba(2, 132, 199, 0.1);
@@ -835,11 +839,27 @@ body {
   font-weight: 800;
 }
 
-.scheme-vacancy {
-  white-space: nowrap;
-  font-size: 10px;
+.scheme-name {
+  display: block;
   font-weight: 700;
+  font-size: 11px;
+}
+
+.scheme-vacancy {
+  display: block;
+  white-space: nowrap;
+  font-size: 9.5px;
+  font-weight: 600;
   color: var(--text-muted);
+  margin-top: 1px;
+}
+
+.scheme-th.active-scheme .scheme-vacancy {
+  color: #0284c7;
+}
+
+[data-theme="dark"] .scheme-th.active-scheme .scheme-vacancy {
+  color: #7dd3fc;
 }
 
 /* 排床結果儲存格樣式 (置中對齊且緊湊) */
