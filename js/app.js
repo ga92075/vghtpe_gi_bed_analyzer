@@ -159,19 +159,24 @@ class BedAnalyzerApp {
             const text = (e.clipboardData || window.clipboardData)?.getData('text');
             if (!text || !text.trim()) return;
 
-            // 判斷是否為病人表格格式 (包含多行或 Tab 分隔，且具有常見欄位關鍵字或多行 TSV)
-            const hasTsvOrMultiLine = (text.includes('\t') && text.includes('\n')) || text.split(/\r?\n/).filter(l => l.trim()).length >= 2;
+            const activeEl = document.activeElement;
+            if (activeEl && activeEl.id === 'quick-paste-input') {
+                return;
+            }
+
+            // 判斷是否為病人表格格式 (包含 Tab 分隔、多行、或具有常見欄位關鍵字)
+            const hasTsvOrMultiLine = text.includes('\t') || text.split(/\r?\n/).filter(l => l.trim()).length >= 2;
             const hasPatientKeywords = ['姓名', '病歷', '床位', '房型', '醫師', '診斷', '急診', '序號', '性別'].some(kw => text.includes(kw));
 
-            const activeEl = document.activeElement;
             const isTextEditor = activeEl && (
                 activeEl.id === 'young-v-input' || 
                 activeEl.id === 'prompt-content' ||
-                activeEl.id === 'quick-paste-input'
+                activeEl.tagName === 'INPUT' ||
+                activeEl.tagName === 'TEXTAREA'
             );
 
-            // 若使用者正在編輯一般文字且貼上的不是病人表格，則維持正常輸入
-            if (isTextEditor && !hasPatientKeywords && !hasTsvOrMultiLine) {
+            // 若使用者正在編輯一般文字輸入框且貼上的不是病人表格，則維持正常輸入
+            if (isTextEditor && !hasPatientKeywords && !text.includes('\t')) {
                 return;
             }
 
@@ -2257,20 +2262,36 @@ class BedAnalyzerApp {
     }
 
     async handleClipboardImport() {
-        // 先嘗試讀取系統剪貼簿 (若已在 localhost 設定允許或已授權，可 0 秒直接讀取)
+        let text = null;
+
+        // 先嘗試讀取系統剪貼簿 (若已授權或處於安全內容，可直接秒速讀取)
         if (navigator.clipboard && navigator.clipboard.readText) {
             try {
-                const text = await navigator.clipboard.readText();
-                if (text && text.trim()) {
-                    this.importPatientFromText(text, "剪貼簿 (Ctrl+C)");
-                    return;
-                }
+                text = await navigator.clipboard.readText();
             } catch (err) {
-                console.warn("navigator.clipboard.readText 需使用者授權或受限，自動開啟免授權貼上視窗:", err);
+                console.warn("navigator.clipboard.readText 需使用者授權或受限:", err);
             }
         }
-        // 若受限於本機檔案 (file:///) 每次都會彈出「此檔案想要查看剪貼簿」詢問，
-        // 則自動開啟極速貼上彈窗，使用者直接按 Ctrl+V 貼上即可免授權瞬間匯入！
+
+        // 若成功從剪貼簿讀取到內容，直接解析匯入
+        if (text && text.trim()) {
+            try {
+                this.importPatientFromText(text, "剪貼簿 (Ctrl+C)");
+                return;
+            } catch (err) {
+                // 剪貼簿有內容但格式不符合時，直接顯示錯誤提示，不彈出無謂視窗
+                this.showToast(err.message, "error");
+                return;
+            }
+        }
+
+        // 若剪貼簿讀取成功但內容為空
+        if (text !== null && !text.trim()) {
+            this.showToast("剪貼簿內容為空，請先在 Excel 或 Google Sheets 框選表格並按 Ctrl+C 複製！", "warning");
+            return;
+        }
+
+        // 若受限於本機檔案 (file:///) 瀏覽器安全限制無法直接讀取剪貼簿，才開啟極速貼上彈窗
         this.openQuickPasteModal();
     }
 

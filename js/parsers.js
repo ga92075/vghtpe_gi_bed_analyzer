@@ -525,6 +525,9 @@ const ExcelPatientParser = {
                 if (mCode) docCode = mCode[0];
             }
 
+            const diagnosis = getVal('diagnosis', 9);
+            const bedPref = getVal('bed_pref', 10);
+
             if (!name && !chartNo && !docCode && !doctor) continue;
 
             const preassigned = this.parsePreassignedBed(rawStatus);
