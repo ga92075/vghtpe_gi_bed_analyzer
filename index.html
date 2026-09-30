@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="zh-TW" data-theme="light">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -17,6 +18,7 @@
     }
   </script>
 </head>
+
 <body>
 
   <!-- 隱藏檔案上傳標籤 -->
@@ -38,11 +40,15 @@
     </div>
     <div class="header-actions">
       <button class="btn btn-primary" id="btn-import-docx" title="動態解析 Word 檔之醫師、配床、請假代理">📂 導入床位word</button>
-      <button class="btn btn-secondary" id="btn-export-config" title="匯出共用設定檔 bed_config.json (包含 Word 醫師配床與規則，絕無病人個資，可供備份或分享至其他電腦)">💾 匯出設定檔</button>
-      <button class="btn btn-secondary" id="btn-import-config" title="匯入 bed_config.json 設定檔 (可還原其他電腦匯出的醫師與排床規則)">📂 匯入設定檔</button>
+      <button class="btn btn-secondary" id="btn-export-config"
+        title="匯出共用設定檔 bed_config.json (包含 Word 醫師配床與規則，絕無病人個資，可供備份或分享至其他電腦)">💾 匯出設定檔</button>
+      <button class="btn btn-secondary" id="btn-import-config" title="匯入 bed_config.json 設定檔 (可還原其他電腦匯出的醫師與排床規則)">📂
+        匯入設定檔</button>
       <button class="btn btn-secondary" id="btn-import-excel" title="選取新的 Excel 檔">📊 導入Excel檔...</button>
-      <button class="btn btn-teal" id="btn-import-clipboard" title="由 Excel 或 Sheets 複製後點此匯入，或在網頁任何地方直接按 Ctrl+V 瞬間免授權貼上">📋 貼上/匯入病人 (Ctrl+V)</button>
-      <button class="btn btn-secondary" id="btn-theme-toggle" title="切換深色/淺色主題" style="padding: 6px 10px; font-size: 15px;">🌙</button>
+      <button class="btn btn-teal" id="btn-import-clipboard"
+        title="由 Excel 或 Sheets 複製後點此匯入，或在網頁任何地方直接按 Ctrl+V 瞬間免授權貼上">📋 貼上/匯入病人 (Ctrl+V)</button>
+      <button class="btn btn-secondary" id="btn-theme-toggle" title="切換深色/淺色主題"
+        style="padding: 6px 10px; font-size: 15px;">🌙</button>
     </div>
   </header>
 
@@ -324,11 +330,15 @@
           <div class="panel-header">
             <div class="panel-title">
               <span>📋</span> 本日入院病人名單 (即時狀態)
-              <span id="lbl-applied-strategy" style="font-size: 12px; font-weight: 700; color: #0284c7; margin-left: 8px;">各病房床位顯示中: 【方案 1 (原本排法/基準)】</span>
+              <span id="lbl-applied-strategy"
+                style="font-size: 12px; font-weight: 700; color: #0284c7; margin-left: 8px;">各病房床位顯示中: 【方案 1
+                (原本排法/基準)】</span>
             </div>
             <div class="panel-actions">
-              <button class="btn btn-secondary btn-sm" id="btn-rt-sort-bed" title="切換是否依床位順序 (113➔124) 排序">↕️ 依床位排序 (113➔124)</button>
-              <button class="btn btn-reset-config btn-sm" id="btn-rt-reset" title="復原至上一筆操作（可復原自動排床或手動修改，Ctrl+Z）">↩ 上一步</button>
+              <button class="btn btn-secondary btn-sm" id="btn-rt-sort-bed" title="切換是否依床位順序 (113➔124) 排序">↕️ 依床位排序
+                (113➔124)</button>
+              <button class="btn btn-reset-config btn-sm" id="btn-rt-reset" title="復原至上一筆操作（可復原自動排床或手動修改，Ctrl+Z）">↩
+                上一步</button>
               <button class="btn btn-reset-config btn-sm" id="btn-rt-redo" title="重做至下一步操作（Ctrl+Y）">↪ 下一步</button>
               <button class="btn btn-primary" id="btn-auto-assign">⚡ 自動排床</button>
             </div>
@@ -336,13 +346,15 @@
 
           <!-- 快速按鈕列 -->
           <div class="main-operations-toolbar">
-            <button class="btn btn-teal btn-sm" id="btn-fill-test-beds" title="以 bed_config.json 填入各病房測試用床位 (可按上一步復原)">🧪 測試用床位</button>
+            <button class="btn btn-teal btn-sm" id="btn-fill-test-beds"
+              title="以 bed_config.json 填入各病房測試用床位 (可按上一步復原)">🧪 測試用床位</button>
             <button class="btn btn-reset-config btn-sm" id="btn-reset-config">↺ 恢復原始設定</button>
             <button class="btn btn-secondary btn-sm" id="btn-clear-all-beds">🗑️ 清空所有床位</button>
             <button class="btn btn-purple btn-sm" id="btn-export-prompt">🤖 複製 AI 簽床 Prompt</button>
             <button class="btn btn-orange btn-sm" id="btn-export-excel">📊 匯出 Excel</button>
             <button class="btn btn-secondary btn-sm" id="btn-copy-summary">📋 複製名單摘要</button>
-            <button class="btn btn-secondary btn-sm" id="btn-clear-patient-cache" onclick="window.app.clearLocalPatientData()" title="換班或公用電腦安全清除此瀏覽器暫存之病人資料">🔒 清除暫存</button>
+            <button class="btn btn-secondary btn-sm" id="btn-clear-patient-cache"
+              onclick="window.app.clearLocalPatientData()" title="換班或公用電腦安全清除此瀏覽器暫存之病人資料">🔒 清除暫存</button>
           </div>
 
           <!-- 即時病人清單表格：四大方案全面呈現 + 獨立複製按鈕 -->
@@ -351,21 +363,41 @@
               <thead>
                 <tr>
                   <th style="width: 30px; text-align: center;">#</th>
-                  <th class="scheme-th active-scheme" id="th-scheme-1" style="width: 72px; min-width: 66px;">
-                    <button class="scheme-copy-btn" onclick="window.app.copyStatusBedColumn(1)" title="以換行分隔直向複製全體病人之「排床1」結果至剪貼簿">📋 複製</button>
-                    <span class="scheme-title-clickable" onclick="window.app.selectBedSchemeColumn(1)" title="點擊切換左側病房為此方案">排床1 <small class="scheme-vacancy" id="scheme-vacancy-1">(空床:0)</small></span>
+                  <th class="scheme-th active-scheme" id="th-scheme-1" style="width: 84px; min-width: 76px;">
+                    <button class="scheme-copy-btn" onclick="window.app.copyStatusBedColumn(1)"
+                      title="以換行分隔直向複製全體病人之「排床1」結果至剪貼簿">📋 複製</button>
+                    <span class="scheme-title-clickable" onclick="window.app.selectBedSchemeColumn(1)"
+                      title="點擊切換左側病房為此方案">
+                      <span class="scheme-name">排床1</span>
+                      <small class="scheme-vacancy" id="scheme-vacancy-1">(空床:0 delay:0)</small>
+                    </span>
                   </th>
-                  <th class="scheme-th" id="th-scheme-2" style="width: 72px; min-width: 66px;">
-                    <button class="scheme-copy-btn" onclick="window.app.copyStatusBedColumn(2)" title="以換行分隔直向複製全體病人之「排床2」結果至剪貼簿">📋 複製</button>
-                    <span class="scheme-title-clickable" onclick="window.app.selectBedSchemeColumn(2)" title="點擊切換左側病房為此方案">排床2 <small class="scheme-vacancy" id="scheme-vacancy-2">(空床:0)</small></span>
+                  <th class="scheme-th" id="th-scheme-2" style="width: 84px; min-width: 76px;">
+                    <button class="scheme-copy-btn" onclick="window.app.copyStatusBedColumn(2)"
+                      title="以換行分隔直向複製全體病人之「排床2」結果至剪貼簿">📋 複製</button>
+                    <span class="scheme-title-clickable" onclick="window.app.selectBedSchemeColumn(2)"
+                      title="點擊切換左側病房為此方案">
+                      <span class="scheme-name">排床2</span>
+                      <small class="scheme-vacancy" id="scheme-vacancy-2">(空床:0 delay:0)</small>
+                    </span>
                   </th>
-                  <th class="scheme-th" id="th-scheme-3" style="width: 72px; min-width: 66px;">
-                    <button class="scheme-copy-btn" onclick="window.app.copyStatusBedColumn(3)" title="以換行分隔直向複製全體病人之「排床3」結果至剪貼簿">📋 複製</button>
-                    <span class="scheme-title-clickable" onclick="window.app.selectBedSchemeColumn(3)" title="點擊切換左側病房為此方案">排床3 <small class="scheme-vacancy" id="scheme-vacancy-3">(空床:0)</small></span>
+                  <th class="scheme-th" id="th-scheme-3" style="width: 84px; min-width: 76px;">
+                    <button class="scheme-copy-btn" onclick="window.app.copyStatusBedColumn(3)"
+                      title="以換行分隔直向複製全體病人之「排床3」結果至剪貼簿">📋 複製</button>
+                    <span class="scheme-title-clickable" onclick="window.app.selectBedSchemeColumn(3)"
+                      title="點擊切換左側病房為此方案">
+                      <span class="scheme-name">排床3</span>
+                      <small class="scheme-vacancy" id="scheme-vacancy-3">(空床:0 delay:0)</small>
+                    </span>
                   </th>
-                  <th class="scheme-th" id="th-scheme-4" style="width: 72px; min-width: 66px;">
-                    <button class="scheme-copy-btn" onclick="window.app.copyStatusBedColumn(4)" title="以換行分隔直向複製全體病人之「排床4」結果至剪貼簿">📋 複製</button>
-                    <span class="scheme-title-clickable" onclick="window.app.selectBedSchemeColumn(4)" title="點擊切換左側病房為此方案 (推薦)">排床4 <small class="scheme-vacancy" id="scheme-vacancy-4">(空床:0)</small></span>
+                  <th class="scheme-th" id="th-scheme-4" style="width: 84px; min-width: 76px;">
+                    <button class="scheme-copy-btn" onclick="window.app.copyStatusBedColumn(4)"
+                      title="以換行分隔直向複製全體病人之「排床4」結果至剪貼簿">📋 複製</button>
+                    <span class="scheme-title-clickable" onclick="window.app.selectBedSchemeColumn(4)"
+                      title="點擊切換左側病房為此方案 (推薦)">
+                      <span class="scheme-name">排床4</span>
+                      <small class="scheme-vacancy" id="scheme-vacancy-4">(空床:0 delay:0)</small>
+                    </span>
                   </th>
                   <th style="width: 62px; text-align: center;">姓名</th>
                   <th style="width: 35px; text-align: center;">性別</th>
@@ -377,7 +409,9 @@
                 </tr>
               </thead>
               <tbody id="live-patients-tbody">
-                <tr><td colspan="12" style="text-align: center; padding: 24px; color: var(--text-dim);">載入中...</td></tr>
+                <tr>
+                  <td colspan="12" style="text-align: center; padding: 24px; color: var(--text-dim);">載入中...</td>
+                </tr>
               </tbody>
             </table>
           </div>
@@ -388,31 +422,37 @@
     <!-- 分頁 2: 本日入院病人名單管理 -->
     <section class="tab-pane" id="pane-patients">
       <!-- 隱私保證標籤 -->
-      <div style="display: flex; align-items: center; justify-content: space-between; background: rgba(16, 185, 129, 0.08); border: 1px dashed rgba(16, 185, 129, 0.35); border-radius: var(--radius-md); padding: 6px 14px; margin-bottom: 8px; font-size: 12px; color: var(--text-color);">
+      <div
+        style="display: flex; align-items: center; justify-content: space-between; background: rgba(16, 185, 129, 0.08); border: 1px dashed rgba(16, 185, 129, 0.35); border-radius: var(--radius-md); padding: 6px 14px; margin-bottom: 8px; font-size: 12px; color: var(--text-color);">
         <span>🔒 <b>本機獨立保密保護</b>：病人表格與簽床修改僅保存在此電腦瀏覽器，絕不上傳或與他人共用。</span>
         <span style="color: var(--text-muted); font-size: 11px;">Word 醫師配床為全院共用</span>
       </div>
 
       <!-- 頂部功能工具列：具備自動排床、切換方案、恢復名單、複製摘要、匯出 -->
-      <div style="background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 10px 14px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; justify-content: space-between;">
+      <div
+        style="background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 10px 14px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; justify-content: space-between;">
         <div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
-          <button class="btn btn-teal btn-sm" id="btn-patients-paste" onclick="window.app.handleClipboardImport()" title="貼上病人名單 (在頁面任何處直接按 Ctrl+V 亦可瞬間免授權貼上)">📋 貼上病人 (Ctrl+V)</button>
+          <button class="btn btn-teal btn-sm" id="btn-patients-paste" onclick="window.app.handleClipboardImport()"
+            title="貼上病人名單 (在頁面任何處直接按 Ctrl+V 亦可瞬間免授權貼上)">📋 貼上病人 (Ctrl+V)</button>
           <button class="btn btn-secondary" id="btn-patients-copy-summary">📋 複製名單摘要</button>
           <button class="btn btn-purple" id="btn-patients-export-prompt">🤖 匯出 AI Prompt</button>
           <button class="btn btn-orange" id="btn-patients-export-excel">📊 匯出 Excel</button>
           <button class="btn btn-secondary btn-sm" id="btn-patients-sort-bed">↕️ 依床位排序</button>
           <button class="btn btn-primary btn-sm" onclick="window.app.openPatientEditModal(-1)">➕ 新增病人</button>
-          <button class="btn btn-secondary btn-sm" id="btn-patients-clear-cache" onclick="window.app.clearLocalPatientData()" title="換班或公用電腦安全清除此瀏覽器暫存之病人資料">🔒 清除暫存名單</button>
+          <button class="btn btn-secondary btn-sm" id="btn-patients-clear-cache"
+            onclick="window.app.clearLocalPatientData()" title="換班或公用電腦安全清除此瀏覽器暫存之病人資料">🔒 清除暫存名單</button>
         </div>
         <div style="display: flex; gap: 8px; align-items: center;">
-          <button class="btn btn-reset-config" id="btn-patients-reset" title="復原至上一筆操作（可復原自動排床或手動修改，Ctrl+Z）">↩ 上一步</button>
+          <button class="btn btn-reset-config" id="btn-patients-reset" title="復原至上一筆操作（可復原自動排床或手動修改，Ctrl+Z）">↩
+            上一步</button>
           <button class="btn btn-reset-config" id="btn-patients-redo" title="重做至下一步操作（Ctrl+Y）">↪ 下一步</button>
           <button class="btn btn-primary" id="btn-patients-auto-assign">⚡ 自動排床</button>
         </div>
       </div>
 
       <!-- 篩選列 -->
-      <div style="background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 10px 14px; display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin-top: 8px;">
+      <div
+        style="background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 10px 14px; display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin-top: 8px;">
         <div style="display: flex; align-items: center; gap: 6px;">
           <label style="font-weight: 700; font-size: 13px;">簽床狀態:</label>
           <select id="filter-status" class="bed-input" style="width: 120px;">
@@ -451,26 +491,44 @@
       </div>
 
       <!-- 病人資料完整表格：四大方案欄位全面呈現 + 房型意願 + 校正後房型意願 -->
-      <div class="table-responsive" style="background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius-md); margin-top: 8px;">
+      <div class="table-responsive"
+        style="background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius-md); margin-top: 8px;">
         <table class="data-table">
           <thead>
             <tr>
               <th style="width: 36px; text-align: center;">序號</th>
-              <th class="scheme-th active-scheme" id="th-p-scheme-1" style="width: 72px; min-width: 66px;">
-                <button class="scheme-copy-btn" onclick="window.app.copyStatusBedColumn(1)" title="直向複製「排床1」結果">📋 複製</button>
-                <span class="scheme-title-clickable" onclick="window.app.selectBedSchemeColumn(1)">排床1 <small class="scheme-vacancy" id="patients-scheme-vacancy-1">(空床:0)</small></span>
+              <th class="scheme-th active-scheme" id="th-p-scheme-1" style="width: 84px; min-width: 76px;">
+                <button class="scheme-copy-btn" onclick="window.app.copyStatusBedColumn(1)" title="直向複製「排床1」結果">📋
+                  複製</button>
+                <span class="scheme-title-clickable" onclick="window.app.selectBedSchemeColumn(1)">
+                  <span class="scheme-name">排床1</span>
+                  <small class="scheme-vacancy" id="patients-scheme-vacancy-1">(空床:0 delay:0)</small>
+                </span>
               </th>
-              <th class="scheme-th" id="th-p-scheme-2" style="width: 72px; min-width: 66px;">
-                <button class="scheme-copy-btn" onclick="window.app.copyStatusBedColumn(2)" title="直向複製「排床2」結果">📋 複製</button>
-                <span class="scheme-title-clickable" onclick="window.app.selectBedSchemeColumn(2)">排床2 <small class="scheme-vacancy" id="patients-scheme-vacancy-2">(空床:0)</small></span>
+              <th class="scheme-th" id="th-p-scheme-2" style="width: 84px; min-width: 76px;">
+                <button class="scheme-copy-btn" onclick="window.app.copyStatusBedColumn(2)" title="直向複製「排床2」結果">📋
+                  複製</button>
+                <span class="scheme-title-clickable" onclick="window.app.selectBedSchemeColumn(2)">
+                  <span class="scheme-name">排床2</span>
+                  <small class="scheme-vacancy" id="patients-scheme-vacancy-2">(空床:0 delay:0)</small>
+                </span>
               </th>
-              <th class="scheme-th" id="th-p-scheme-3" style="width: 72px; min-width: 66px;">
-                <button class="scheme-copy-btn" onclick="window.app.copyStatusBedColumn(3)" title="直向複製「排床3」結果">📋 複製</button>
-                <span class="scheme-title-clickable" onclick="window.app.selectBedSchemeColumn(3)">排床3 <small class="scheme-vacancy" id="patients-scheme-vacancy-3">(空床:0)</small></span>
+              <th class="scheme-th" id="th-p-scheme-3" style="width: 84px; min-width: 76px;">
+                <button class="scheme-copy-btn" onclick="window.app.copyStatusBedColumn(3)" title="直向複製「排床3」結果">📋
+                  複製</button>
+                <span class="scheme-title-clickable" onclick="window.app.selectBedSchemeColumn(3)">
+                  <span class="scheme-name">排床3</span>
+                  <small class="scheme-vacancy" id="patients-scheme-vacancy-3">(空床:0 delay:0)</small>
+                </span>
               </th>
-              <th class="scheme-th" id="th-p-scheme-4" style="width: 72px; min-width: 66px;">
-                <button class="scheme-copy-btn" onclick="window.app.copyStatusBedColumn(4)" title="直向複製「排床4」結果">📋 複製</button>
-                <span class="scheme-title-clickable" onclick="window.app.selectBedSchemeColumn(4)" title="點擊切換左側病房為此方案 (推薦)">排床4 <small class="scheme-vacancy" id="patients-scheme-vacancy-4">(空床:0)</small></span>
+              <th class="scheme-th" id="th-p-scheme-4" style="width: 84px; min-width: 76px;">
+                <button class="scheme-copy-btn" onclick="window.app.copyStatusBedColumn(4)" title="直向複製「排床4」結果">📋
+                  複製</button>
+                <span class="scheme-title-clickable" onclick="window.app.selectBedSchemeColumn(4)"
+                  title="點擊切換左側病房為此方案 (推薦)">
+                  <span class="scheme-name">排床4</span>
+                  <small class="scheme-vacancy" id="patients-scheme-vacancy-4">(空床:0 delay:0)</small>
+                </span>
               </th>
               <th style="width: 85px;">聯絡/抗凝</th>
               <th style="width: 58px; text-align: center;">抵達通知</th>
@@ -501,10 +559,13 @@
     <section class="tab-pane" id="pane-doctors">
       <div style="display: flex; flex-direction: column; gap: 14px;">
         <!-- 上方：整合式主治醫師與配床表 (各病房一體化表格，欄位完全垂直對齊) -->
-        <div style="background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 14px;">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 8px;">
+        <div
+          style="background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 14px;">
+          <div
+            style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 8px;">
             <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
-              <h3 style="font-size: 16px; font-weight: 700; margin: 0; color: var(--primary);">👨‍⚕️ 各病房主治醫師與配床表 (🌐 全院共用設定)</h3>
+              <h3 style="font-size: 16px; font-weight: 700; margin: 0; color: var(--primary);">👨‍⚕️ 各病房主治醫師與配床表 (🌐
+                全院共用設定)</h3>
               <div class="doctor-ward-pills" id="doc-ward-filter-pills">
                 <button class="pill-btn active" data-ward="all">全部病房</button>
                 <button class="pill-btn" data-ward="113">113</button>
@@ -515,7 +576,8 @@
               </div>
             </div>
             <div style="display: flex; align-items: center; gap: 8px;">
-              <input type="text" id="doc-filter-search" class="bed-input" style="width: 180px;" placeholder="搜尋醫師姓名或燈號...">
+              <input type="text" id="doc-filter-search" class="bed-input" style="width: 180px;"
+                placeholder="搜尋醫師姓名或燈號...">
               <button class="btn btn-secondary btn-sm" id="btn-add-doc">➕ 新增醫師</button>
             </div>
           </div>
@@ -540,14 +602,17 @@
                 </tr>
               </thead>
               <tbody id="unified-doctors-tbody">
-                <tr><td colspan="6" style="text-align:center; padding: 20px;">載入中...</td></tr>
+                <tr>
+                  <td colspan="6" style="text-align:center; padding: 20px;">載入中...</td>
+                </tr>
               </tbody>
             </table>
           </div>
         </div>
 
         <!-- 下方：醫師請假與代理清冊 -->
-        <div style="background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 14px;">
+        <div
+          style="background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 14px;">
           <h3 style="font-size: 16px; font-weight: 700; margin-bottom: 10px; color: #b45309;">🏖️ 醫師請假與代理清冊</h3>
           <div id="leaves-list-container"></div>
         </div>
@@ -566,8 +631,10 @@
     <div class="status-stats">
       <span class="status-item">可用空床: <strong id="stat-total-beds">0</strong> 床</span>
       <span class="status-item">今日入院病人: <strong id="stat-total-patients">0</strong> 位</span>
-      <span class="status-item" style="color: var(--success);">已排床: <strong id="stat-assigned-patients">0</strong> 位</span>
-      <span class="status-item" style="color: var(--warning);">待排/延後: <strong id="stat-pending-patients">0</strong> 位</span>
+      <span class="status-item" style="color: var(--success);">已排床: <strong id="stat-assigned-patients">0</strong>
+        位</span>
+      <span class="status-item" style="color: var(--warning);">待排/延後: <strong id="stat-pending-patients">0</strong>
+        位</span>
       <span class="status-item">性別比例: <strong id="stat-gender-count">男 0 / 女 0</strong></span>
     </div>
     <div>病房簽床床位管理系統 · 純前端離線支援與高隱私版</div>
@@ -585,7 +652,8 @@
         <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 8px;">
           此 Prompt 整合了去識別化病人名單、全院可用空床 JSON 與嚴格簽床規則。可直接一鍵複製至 ChatGPT 4o 或 Gemini 進行排床驗證！
         </p>
-        <textarea id="prompt-textarea" style="width: 100%; height: 420px; font-family: var(--font-mono); font-size: 12px; padding: 10px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: var(--bg-subtle); color: var(--text-main); line-height: 1.6;"></textarea>
+        <textarea id="prompt-textarea"
+          style="width: 100%; height: 420px; font-family: var(--font-mono); font-size: 12px; padding: 10px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: var(--bg-subtle); color: var(--text-main); line-height: 1.6;"></textarea>
       </div>
       <div class="modal-footer">
         <button class="btn btn-secondary" onclick="window.app.closeModal('prompt-modal')">關閉</button>
@@ -651,7 +719,8 @@
         </div>
       </div>
       <div class="modal-footer">
-        <button class="btn btn-teal btn-sm" id="btn-patient-quick-blank" style="margin-right: auto; display: none;" onclick="window.app.quickInsertBlankPatient()">📄 直接插入空白病人</button>
+        <button class="btn btn-teal btn-sm" id="btn-patient-quick-blank" style="margin-right: auto; display: none;"
+          onclick="window.app.quickInsertBlankPatient()">📄 直接插入空白病人</button>
         <button class="btn btn-secondary" onclick="window.app.closeModal('patient-edit-modal')">取消</button>
         <button class="btn btn-primary" id="btn-save-patient-modal" onclick="window.app.savePatientEdit()">儲存修改</button>
       </div>
@@ -713,12 +782,16 @@
         <button class="modal-close-btn" onclick="window.app.closeModal('quick-paste-modal')">&times;</button>
       </div>
       <div class="modal-body">
-        <div style="background: rgba(59, 130, 246, 0.08); border: 1px solid rgba(59, 130, 246, 0.25); border-radius: var(--radius-md); padding: 10px 14px; margin-bottom: 12px; font-size: 13px; line-height: 1.6;">
+        <div
+          style="background: rgba(59, 130, 246, 0.08); border: 1px solid rgba(59, 130, 246, 0.25); border-radius: var(--radius-md); padding: 10px 14px; margin-bottom: 12px; font-size: 13px; line-height: 1.6;">
           <div style="font-weight: 700; color: var(--primary); margin-bottom: 4px;">🚀 0 秒免授權貼上方式：</div>
           <div>在下方輸入框直接按鍵盤 <b>Ctrl + V</b>（或滑鼠右鍵貼上），系統將<b>自動偵測並瞬間完成匯入</b>，完全不會跳出瀏覽器「查看剪貼簿」詢問！</div>
-          <div style="margin-top: 6px; font-size: 11px; color: var(--text-muted);">💡 小撇步：往後在網頁任何畫面直接按 <b>Ctrl + V</b>，也能直接匯入！</div>
+          <div style="margin-top: 6px; font-size: 11px; color: var(--text-muted);">💡 小撇步：往後在網頁任何畫面直接按 <b>Ctrl +
+              V</b>，也能直接匯入！</div>
         </div>
-        <textarea id="quick-paste-input" class="bed-input" style="width: 100%; height: 110px; font-family: monospace; font-size: 13px; box-sizing: border-box;" placeholder="👉 請直接按 Ctrl+V 貼上（貼上後會立刻自動匯入並關閉）..."></textarea>
+        <textarea id="quick-paste-input" class="bed-input"
+          style="width: 100%; height: 110px; font-family: monospace; font-size: 13px; box-sizing: border-box;"
+          placeholder="👉 請直接按 Ctrl+V 貼上（貼上後會立刻自動匯入並關閉）..."></textarea>
       </div>
       <div class="modal-footer">
         <button class="btn btn-secondary" onclick="window.app.closeModal('quick-paste-modal')">關閉</button>
@@ -737,4 +810,5 @@
   <script src="js/engine.js"></script>
   <script src="js/app.js"></script>
 </body>
+
 </html>
