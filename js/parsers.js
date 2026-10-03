@@ -360,11 +360,14 @@ const ExcelPatientParser = {
         const s = String(statusBed).trim();
         if (!s) return null;
 
-        if (s.toLowerCase().includes('delay') || s.includes('延後')) {
+        if (s.toLowerCase().includes('delay') || s.includes('延後') || s.includes('待排') || s === '-' || s === '無') {
             return null;
         }
 
-        const sNorm = s.replace(/－/g, '-').replace(/─/g, '-').replace(/—/g, '-').replace(/–/g, '-');
+        let sNorm = s.replace(/－/g, '-').replace(/─/g, '-').replace(/—/g, '-').replace(/–/g, '-');
+        if (!sNorm.includes('-')) {
+            sNorm = sNorm.replace(/([A-Za-z\u4e00-\u9fa5]*\d+)\s*[\/病房\s]\s*(\d+)(?:床)?/, '$1-$2');
+        }
         if (!sNorm.includes('-')) return null;
 
         const m = sNorm.match(/([A-Za-z\u4e00-\u9fa5]*\d+)\s*-\s*(\d+)(\s*\(.*?\))?/);

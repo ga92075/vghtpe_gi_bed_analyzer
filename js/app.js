@@ -31,6 +31,10 @@ class BedAnalyzerApp {
         this.loadInitialData();
     }
 
+    get patients() {
+        return (this.manager && this.manager.patientData && this.manager.patientData.patients) || [];
+    }
+
     initDOMReferences() {
         // 分頁與主題
         this.tabBtns = document.querySelectorAll('.tab-btn');
@@ -51,6 +55,7 @@ class BedAnalyzerApp {
 
         // 主畫面操作按鈕
         this.btnAutoAssign = document.getElementById('btn-auto-assign');
+        this.btnAutoAssignBottom = document.getElementById('btn-auto-assign-bottom');
         this.btnRtReset = document.getElementById('btn-rt-reset');
         this.btnRtRedo = document.getElementById('btn-rt-redo');
         this.btnResetConfig = document.getElementById('btn-reset-config');
@@ -227,6 +232,9 @@ class BedAnalyzerApp {
         // 主操作按鈕
         if (this.btnAutoAssign) {
             this.btnAutoAssign.addEventListener('click', () => this.executeAutoAssign());
+        }
+        if (this.btnAutoAssignBottom) {
+            this.btnAutoAssignBottom.addEventListener('click', () => this.executeAutoAssign());
         }
         if (this.btnRtReset) {
             this.btnRtReset.addEventListener('click', () => this.undoLastAction());
@@ -682,6 +690,7 @@ class BedAnalyzerApp {
         const availableBeds = [];
         const wards = BedConfigManager.STANDARD_WARDS;
 
+        const seenBeds = new Set();
         for (const w of wards) {
             const resVal = this.manager.getInput(w, '留床');
             const reservedBeds = new Set((parseBedString(resVal) || []).map(b => String(b)));
@@ -693,8 +702,13 @@ class BedAnalyzerApp {
                 const bNums = parseBedString(bedStr);
                 for (let idx = 0; idx < bNums.length; idx++) {
                     const bNum = bNums[idx];
+                    const wClean = String(w).replace('A', '');
+                    const bNorm = /^\d+$/.test(bNum) ? String(parseInt(bNum, 10)) : String(bNum);
+                    const bedKey = `${wClean}_${bNorm}`;
+                    if (seenBeds.has(bedKey)) continue;
                     // 同病房有留床之床位視同不參與排床
                     if (reservedBeds.has(String(bNum))) continue;
+                    seenBeds.add(bedKey);
 
                     const bedInfo = this.manager.lookupBed(w, bNum, cat);
                     const docCode = bedInfo ? (bedInfo.clean_doc_code || (bedInfo.doctor_code || '').replace(/\D/g, '')) : "";
@@ -702,7 +716,6 @@ class BedAnalyzerApp {
                     const isIso = bedInfo ? bedInfo.is_isolation : false;
 
                     // 113-124 單人房為「單人5000」；122 雙人房為「2人房2400」；其餘維持「健保床」
-                    const wClean = String(w).replace('A', '');
                     let isCo = false;
                     let bedType = "健保床";
                     if (cat === '單人') {
@@ -1060,7 +1073,52 @@ class BedAnalyzerApp {
             if (pre) {
                 const wName = pre.wardClean || pre.ward || pre[0];
                 const bNum = pre.bedNum || pre[1];
+                const wNorm = String(wName).replace('A', '');
+                const bNorm = /^\d+$/.test(bNum) ? String(parseInt(bNum, 10)) : String(bNum);
+
+                // 檢查是否已有其他病人佔用此床位，若有則自動釋出並通知使用者，避免一床兩用
+                if (!['192', '119', '129'].includes(wNorm) && this.patients) {
+                    for (const other of this.patients) {
+                        if (other === patient) continue;
+                        const ow = String(other.assigned_ward || '').replace('A', '');
+                        const ob = /^\d+$/.test(other.assigned_bed) ? String(parseInt(other.assigned_bed, 10)) : String(other.assigned_bed);
+                        let isConflict = (ow && ob && ow === wNorm && ob === bNorm);
+                        if (!isConflict) {
+                            const oPre = ExcelPatientParser.parsePreassignedBed(other.status_bed || '');
+                            if (oPre) {
+                                const oWNorm = String(oPre.ward).replace('A', '');
+                                const oBNorm = /^\d+$/.test(oPre.bedNum) ? String(parseInt(oPre.bedNum, 10)) : String(oPre.bedNum);
+                                if (oWNorm === wNorm && oBNorm === bNorm) isConflict = true;
+                            }
+                        }
+                        if (isConflict) {
+                            for (let k = 1; k <= 4; k++) {
+                                other[`assigned_ward_${k}`] = '';
+                                other[`assigned_bed_${k}`] = '';
+                                other[`status_bed_${k}`] = '待排';
+                                other[`is_assigned_${k}`] = false;
+                                other[`is_manual_assigned_${k}`] = false;
+                            }
+                            other.assigned_ward = '';
+                            other.assigned_bed = '';
+                            other.status_bed = '待排';
+                            other.raw_status_bed = '';
+                            other.is_assigned = false;
+                            other.is_manual_assigned = false;
+                            other.is_bed_locked = false;
+                            delete other.bed_lock_restore;
+                            this.showToast(`⚠️ 床位【${wName}-${bNum}】原由「${other.name}」使用，已自動將其釋出改為待排，避免一床兩用！`, 'warning');
+                        }
+                    }
+                }
+
                 const bInfo = this.manager.lookupBed(wName, parseInt(bNum, 10));
+                if (bInfo) {
+                    const bCleanDoc = String(bInfo.clean_doc_code || (bInfo.doctor_code || '')).replace(/\D/g, '');
+                    if (bCleanDoc === '1705' && BedAssignmentEngine.isErEicuPatient(patient) && BedAssignmentEngine.isUnassignedOrBlankDoctorPatient(patient)) {
+                        this.showToast(`⚠️ 提醒：依排床規定，1705 醫師的床位不能給急診的無主或空白主治醫師的病人！`, 'warning');
+                    }
+                }
                 if (bInfo && !/\(.*?\)/.test(newVal)) {
                     const pClean = String(patient.doc_code || '').replace(/\D/g, '');
                     const bDoc = String(bInfo.clean_doc_code || '').replace(/\D/g, '');
@@ -1509,6 +1567,43 @@ class BedAnalyzerApp {
 
             const ward = patient[`assigned_ward_${schemeIdx}`] || patient.assigned_ward || '';
             const bed = patient[`assigned_bed_${schemeIdx}`] || patient.assigned_bed || '';
+            const wNorm = String(ward).replace('A', '');
+            const bNorm = /^\d+$/.test(bed) ? String(parseInt(bed, 10)) : String(bed);
+
+            if (wNorm && bNorm && !['192', '119', '129'].includes(wNorm) && this.patients) {
+                for (const other of this.patients) {
+                    if (other === patient) continue;
+                    const ow = String(other.assigned_ward || '').replace('A', '');
+                    const ob = /^\d+$/.test(other.assigned_bed) ? String(parseInt(other.assigned_bed, 10)) : String(other.assigned_bed);
+                    let isConflict = (ow && ob && ow === wNorm && ob === bNorm);
+                    if (!isConflict) {
+                        const oPre = ExcelPatientParser.parsePreassignedBed(other.status_bed || '');
+                        if (oPre) {
+                            const oWNorm = String(oPre.ward).replace('A', '');
+                            const oBNorm = /^\d+$/.test(oPre.bedNum) ? String(parseInt(oPre.bedNum, 10)) : String(oPre.bedNum);
+                            if (oWNorm === wNorm && oBNorm === bNorm) isConflict = true;
+                        }
+                    }
+                    if (isConflict) {
+                        for (let k = 1; k <= 4; k++) {
+                            other[`assigned_ward_${k}`] = '';
+                            other[`assigned_bed_${k}`] = '';
+                            other[`status_bed_${k}`] = '待排';
+                            other[`is_assigned_${k}`] = false;
+                            other[`is_manual_assigned_${k}`] = false;
+                        }
+                        other.assigned_ward = '';
+                        other.assigned_bed = '';
+                        other.status_bed = '待排';
+                        other.raw_status_bed = '';
+                        other.is_assigned = false;
+                        other.is_manual_assigned = false;
+                        other.is_bed_locked = false;
+                        delete other.bed_lock_restore;
+                        this.showToast(`⚠️ 床位【${ward}-${bed}】原由「${other.name}」使用，已自動解除佔用改為待排！`, 'warning');
+                    }
+                }
+            }
             for (let k = 1; k <= 4; k++) {
                 patient[`status_bed_${k}`] = statusBed;
                 patient[`is_assigned_${k}`] = true;
@@ -2188,6 +2283,7 @@ class BedAnalyzerApp {
                         <li>1782 與 1772 嚴格禁止互借床位</li>
                         <li>1772 禁止借用 124 病房任何床位</li>
                         <li>1782 禁止借用 121 病房任何床位</li>
+                        <li>1705 的床位不能給急診的無主或空白主治醫師的病人</li>
                         <li>雙空房每兩床為一間，一人入住後同房夥伴自動鎖定為同性別</li>
                     </ul>
                 </div>
@@ -2351,6 +2447,8 @@ class BedAnalyzerApp {
 
         // 僅對非手動指定且非原始輸入預排的病人清空前次演算法排定的床位標記，嚴格保留使用者編輯與原始輸入之預排床位
         patients.forEach(p => {
+            delete p._assigned_bed_obj;
+            delete p._is_borrow;
             const rawSt = String(p.raw_status_bed || '').trim();
             const hasRaw = Boolean(rawSt && !rawSt.toLowerCase().includes('delay') && !rawSt.includes('待') && !['-', '無'].includes(rawSt));
             const isPreassigned = Boolean(p.is_manual_assigned || hasRaw);
@@ -2445,6 +2543,34 @@ class BedAnalyzerApp {
                     p.is_assigned = Boolean(p[`is_assigned_${selCol}`]);
                 });
 
+                // 防呆驗證：全域檢查四大方案各欄位是否完全無重複床位指派
+                for (let k = 1; k <= 4; k++) {
+                    const bedOwners = new Map();
+                    const targetPts = patients || this.patients || [];
+                    targetPts.forEach(p => {
+                        const w = String(p[`assigned_ward_${k}`] || '').replace('A', '');
+                        const b = String(p[`assigned_bed_${k}`] || '');
+                        if (!w || !b || ['192', '119', '129'].includes(w)) return;
+                        const bNorm = /^\d+$/.test(b) ? String(parseInt(b, 10)) : b;
+                        const key = `${w}_${bNorm}`;
+                        if (bedOwners.has(key)) {
+                            console.warn(`[AutoAssign Duplicate Prevented in Scheme ${k}] Bed ${key} was claimed by both ${bedOwners.get(key).name} and ${p.name}`);
+                            p[`assigned_ward_${k}`] = '';
+                            p[`assigned_bed_${k}`] = '';
+                            p[`status_bed_${k}`] = '待排';
+                            p[`is_assigned_${k}`] = false;
+                            if (this.selectedSchemeCol === k) {
+                                p.assigned_ward = '';
+                                p.assigned_bed = '';
+                                p.status_bed = '待排';
+                                p.is_assigned = false;
+                            }
+                        } else {
+                            bedOwners.set(key, p);
+                        }
+                    });
+                }
+
                 this.hasAutoAssigned = true;
 
                 // 刷新介面
@@ -2531,22 +2657,44 @@ class BedAnalyzerApp {
         this.showToast(`已成功套用【${strat.name}】！`, "success");
     }
 
+    _safeClone(obj) {
+        if (!obj) return obj;
+        try {
+            return JSON.parse(JSON.stringify(obj));
+        } catch (e) {
+            console.warn("safeClone cycle detected, cleaning:", e);
+            const seen = new WeakSet();
+            return JSON.parse(JSON.stringify(obj, (key, value) => {
+                if (key && key.startsWith('_')) return undefined;
+                if (typeof value === 'object' && value !== null) {
+                    if (seen.has(value)) return undefined;
+                    seen.add(value);
+                }
+                return value;
+            }));
+        }
+    }
+
     pushUndoSnapshot() {
         if (!this.undoStack) this.undoStack = [];
         if (!this.redoStack) this.redoStack = [];
         // 使用者新操作發生時，清空重做堆疊
         this.redoStack = [];
 
-        const snapshot = {
-            patientData: JSON.parse(JSON.stringify((this.manager && this.manager.patientData) ? this.manager.patientData : {})),
-            doctorConfig: JSON.parse(JSON.stringify((this.manager && this.manager.data) ? this.manager.data : {})),
-            wardInputs: JSON.parse(JSON.stringify((this.manager && this.manager.inputs) ? this.manager.inputs : {})),
-            hasAutoAssigned: Boolean(this.hasAutoAssigned),
-            selectedSchemeCol: this.selectedSchemeCol || 1,
-            currentStrategies: this.currentStrategies ? JSON.parse(JSON.stringify(this.currentStrategies)) : null
-        };
-        this.undoStack.push(snapshot);
-        if (this.undoStack.length > 50) this.undoStack.shift();
+        try {
+            const snapshot = {
+                patientData: this._safeClone((this.manager && this.manager.patientData) ? this.manager.patientData : {}),
+                doctorConfig: this._safeClone((this.manager && this.manager.data) ? this.manager.data : {}),
+                wardInputs: this._safeClone((this.manager && this.manager.inputs) ? this.manager.inputs : {}),
+                hasAutoAssigned: Boolean(this.hasAutoAssigned),
+                selectedSchemeCol: this.selectedSchemeCol || 1,
+                currentStrategies: this._safeClone(this.currentStrategies || null)
+            };
+            this.undoStack.push(snapshot);
+            if (this.undoStack.length > 50) this.undoStack.shift();
+        } catch (err) {
+            console.warn("pushUndoSnapshot failed:", err);
+        }
     }
 
     undoLastAction() {
@@ -2556,17 +2704,21 @@ class BedAnalyzerApp {
         }
         if (!this.redoStack) this.redoStack = [];
 
-        // 擷取當前狀態壓入 redoStack
-        const currentSnapshot = {
-            patientData: JSON.parse(JSON.stringify((this.manager && this.manager.patientData) ? this.manager.patientData : {})),
-            doctorConfig: JSON.parse(JSON.stringify((this.manager && this.manager.data) ? this.manager.data : {})),
-            wardInputs: JSON.parse(JSON.stringify((this.manager && this.manager.inputs) ? this.manager.inputs : {})),
-            hasAutoAssigned: Boolean(this.hasAutoAssigned),
-            selectedSchemeCol: this.selectedSchemeCol || 1,
-            currentStrategies: this.currentStrategies ? JSON.parse(JSON.stringify(this.currentStrategies)) : null
-        };
-        this.redoStack.push(currentSnapshot);
-        if (this.redoStack.length > 50) this.redoStack.shift();
+        try {
+            // 擷取當前狀態壓入 redoStack
+            const currentSnapshot = {
+                patientData: this._safeClone((this.manager && this.manager.patientData) ? this.manager.patientData : {}),
+                doctorConfig: this._safeClone((this.manager && this.manager.data) ? this.manager.data : {}),
+                wardInputs: this._safeClone((this.manager && this.manager.inputs) ? this.manager.inputs : {}),
+                hasAutoAssigned: Boolean(this.hasAutoAssigned),
+                selectedSchemeCol: this.selectedSchemeCol || 1,
+                currentStrategies: this._safeClone(this.currentStrategies || null)
+            };
+            this.redoStack.push(currentSnapshot);
+            if (this.redoStack.length > 50) this.redoStack.shift();
+        } catch (err) {
+            console.warn("redo capture failed:", err);
+        }
 
         const snapshot = this.undoStack.pop();
         this._applyStateSnapshot(snapshot);
@@ -2580,17 +2732,21 @@ class BedAnalyzerApp {
         }
         if (!this.undoStack) this.undoStack = [];
 
-        // 擷取當前狀態壓入 undoStack
-        const currentSnapshot = {
-            patientData: JSON.parse(JSON.stringify((this.manager && this.manager.patientData) ? this.manager.patientData : {})),
-            doctorConfig: JSON.parse(JSON.stringify((this.manager && this.manager.data) ? this.manager.data : {})),
-            wardInputs: JSON.parse(JSON.stringify((this.manager && this.manager.inputs) ? this.manager.inputs : {})),
-            hasAutoAssigned: Boolean(this.hasAutoAssigned),
-            selectedSchemeCol: this.selectedSchemeCol || 1,
-            currentStrategies: this.currentStrategies ? JSON.parse(JSON.stringify(this.currentStrategies)) : null
-        };
-        this.undoStack.push(currentSnapshot);
-        if (this.undoStack.length > 50) this.undoStack.shift();
+        try {
+            // 擷取當前狀態壓入 undoStack
+            const currentSnapshot = {
+                patientData: this._safeClone((this.manager && this.manager.patientData) ? this.manager.patientData : {}),
+                doctorConfig: this._safeClone((this.manager && this.manager.data) ? this.manager.data : {}),
+                wardInputs: this._safeClone((this.manager && this.manager.inputs) ? this.manager.inputs : {}),
+                hasAutoAssigned: Boolean(this.hasAutoAssigned),
+                selectedSchemeCol: this.selectedSchemeCol || 1,
+                currentStrategies: this._safeClone(this.currentStrategies || null)
+            };
+            this.undoStack.push(currentSnapshot);
+            if (this.undoStack.length > 50) this.undoStack.shift();
+        } catch (err) {
+            console.warn("undo capture failed:", err);
+        }
 
         const snapshot = this.redoStack.pop();
         this._applyStateSnapshot(snapshot);
@@ -3110,6 +3266,12 @@ class BedAnalyzerApp {
                 const bNum = pre.bedNum || pre[1];
                 const bInt = parseInt(bNum, 10);
                 const bInfo = !isNaN(bInt) && this.manager ? this.manager.lookupBed(wName, bInt) : null;
+                if (bInfo) {
+                    const bCleanDoc = String(bInfo.clean_doc_code || (bInfo.doctor_code || '')).replace(/\D/g, '');
+                    if (bCleanDoc === '1705' && BedAssignmentEngine.isErEicuPatient(p) && BedAssignmentEngine.isUnassignedOrBlankDoctorPatient(p)) {
+                        this.showToast(`⚠️ 提醒：依排床規定，1705 醫師的床位不能給急診的無主或空白主治醫師的病人！`, 'warning');
+                    }
+                }
 
                 if (bInfo && !/\(.*?\)/.test(newSt)) {
                     const pClean = String(p.doc_code || '').replace(/\D/g, '');
@@ -3682,6 +3844,7 @@ class BedAnalyzerApp {
                                 <ul>
                                     <li><strong>互借禁令</strong>：1782 與 1772 嚴格禁止互借。</li>
                                     <li><strong>病房限制</strong>：1772 不能借 124 的床位；1782 不能借 121 的床位；1782 床位不借給非 124 醫師。</li>
+                                    <li><strong>1705 醫師床位限制</strong>：1705 的床位<strong>不能給急診的無主或空白主治醫師的病人</strong>。</li>
                                     <li><strong>雙空床位</strong>：雙空床位優先給原本主治醫師，但借出亦可（避免明明有雙空卻讓病人延後住院）。</li>
                                     <li><strong>非優先借床醫師</strong>：<code>{'1772', '5383', '5380', '1403'}</code> 之床位列為<strong>非優先借床</strong>。全方案（包含方案 1、2、3、4）均進行嚴格權重扣分（二分圖匹配扣 4,000 分），僅在全院無其他床位可滿足該病人時，作為最後防線借用。</li>
                                 </ul>

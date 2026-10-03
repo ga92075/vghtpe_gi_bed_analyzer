@@ -577,6 +577,7 @@ class BedAssignmentEngine {
     static DOC_1772 = '1772';
     static DOC_1699 = '1699';
     static DOC_1691 = '1691';
+    static DOC_1705 = '1705';
     static DOCS_124_GROUP = ['1699', '1691', '1782'];
     static RULE2_PREFERRED_BORROW_DOCS = ['1699', '1691'];
     static RULE3_DEPRIORITIZED_BORROW_DOCS = new Set(['1772', '5383', '5380', '1403']);
@@ -611,8 +612,31 @@ class BedAssignmentEngine {
         return this.SHORT_STAY_KEYWORDS.some(k => combined.includes(k));
     }
 
-    static canDoctorBorrowBed(docCode, bed) {
-        const bDoc = bed.clean_doc_code || '';
+    static isUnassignedOrBlankDoctorPatient(p) {
+        if (!p) return true;
+        const cleanCode = String(p.doc_code || '').replace(/\D/g, '');
+        const hasValidCode = Boolean(cleanCode && cleanCode !== '9999' && cleanCode !== '0');
+        const rawName = String(p.doctor || p.doctor_name || p.doc_name || '').trim();
+        const invalidNames = ['無', '未指定', '-', '待查', '待定', '無主', '急診', '待派', '都可', '0', '9999'];
+        const hasValidName = Boolean(rawName && !invalidNames.includes(rawName));
+        return !(hasValidCode || hasValidName);
+    }
+
+    static canPatientTakeBed(p, bed) {
+        if (!p || !bed) return false;
+        const bDoc = bed.clean_doc_code || (bed.doctor_code ? String(bed.doctor_code).replace(/\D/g, '') : '');
+
+        // 規定：1705 的床不能給急診的無主或空白主治醫師的病人
+        if (bDoc === this.DOC_1705) {
+            if (this.isErEicuPatient(p) && this.isUnassignedOrBlankDoctorPatient(p)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    static canDoctorBorrowBed(docCode, bed, patient = null) {
+        const bDoc = bed.clean_doc_code || (bed.doctor_code ? String(bed.doctor_code).replace(/\D/g, '') : '');
         const bWard = String(bed.ward || '').replace('A', '');
 
         // 1. 1782 與 1772 不能互借
@@ -627,6 +651,17 @@ class BedAssignmentEngine {
 
         // 4. 1782 的床位不能借給非 124 核心群醫師
         if (bDoc === this.DOC_1782 && !this.DOCS_124_GROUP.includes(docCode)) return false;
+
+        // 5. 1705 的床不能給急診的無主或空白主治醫師的病人
+        if (bDoc === this.DOC_1705) {
+            if (patient) {
+                if (this.isErEicuPatient(patient) && this.isUnassignedOrBlankDoctorPatient(patient)) {
+                    return false;
+                }
+            } else if (!docCode || docCode === '9999' || docCode === '0') {
+                return false;
+            }
+        }
 
         return true;
     }
@@ -1227,7 +1262,8 @@ class BedAssignmentEngine {
 
                     const bDoc = b.clean_doc_code || '';
                     const isOwn = (bDoc === cleanDoc);
-                    if (!isOwn && !this.canDoctorBorrowBed(cleanDoc, b)) continue;
+                    if (!this.canPatientTakeBed(p, b)) continue;
+                    if (!isOwn && !this.canDoctorBorrowBed(cleanDoc, b, p)) continue;
 
                     let matchedCritIdx = -1;
                     for (let cIdx = 0; cIdx < orderCriteria.length; cIdx++) {
@@ -1275,8 +1311,6 @@ class BedAssignmentEngine {
                     if (delayDays > 0) {
                         wScore += delayDays * 100000.0; // 延後病人最高優先權
                     }
-                    const [choiceCount, prefRank] = this.getPreferenceSortKey(p);
-                    wScore += (5 - Math.min(choiceCount, 5)) * 100.0 - prefRank * 10.0;
                     if (isOntime) wScore += 50.0;
                     if (isEr) wScore += 30.0;
 
@@ -1286,11 +1320,12 @@ class BedAssignmentEngine {
                     }
 
                     if (!isOwn && isShort) wScore += 100.0;
-                    // 嚴格考慮病人 prefer 的順位 (第1意願 >> 第2意願 >> 第3意願)
-                    wScore -= matchedCritIdx * 10000.0;
+
+                    // 當同一病人有多種房型可選時，優先滿足其靠前之意願；但同床位競爭時以 randVal 隨機決勝，避免 2>2$ 與 2>4 或 2>2$>4 與 2$>2>4 產生順位之差
+                    wScore -= matchedCritIdx * 10.0;
 
                     const randVal = (p._rand_tie !== undefined && p._rand_tie !== null) ? p._rand_tie : 0.0;
-                    wScore += randVal * 1.0;
+                    wScore += randVal * 1000.0;
 
                     if ((b.category === '雙空' || b.is_double_empty) && b.twin_room_status === 'one_used') {
                         wScore += 400.0;
@@ -1472,14 +1507,14 @@ class BedAssignmentEngine {
                 ? docRandomMap[cleanDocCode]
                 : (p._rand_tie !== undefined ? p._rand_tie : 0.0);
 
-            const [choiceCount, prefRank, randVal] = this.getPreferenceSortKey(p);
+            const randVal = (p._rand_tie !== undefined && p._rand_tie !== null) ? p._rand_tie : 0.0;
 
+            // 同主治醫師、同延後天數時，所有能住該床位的病人皆依隨機值 (randVal) 決定順序，
+            // 避免 2>2$ 優先於 2>4，使 2>2$>4 與 2$>2>4 平等參與競爭無順位之差。
             return [
                 docTier,
                 -delayDays,
                 docRand,
-                choiceCount,
-                prefRank,
                 randVal,
                 p.row_idx || 999
             ];
@@ -1503,8 +1538,8 @@ class BedAssignmentEngine {
             });
         }
 
-        // 收集已佔用床位
-        const preoccupiedBeds = new Set();
+        // 收集已佔用床位 (使用 Map 嚴格偵測重複指定衝突，避免同一張床在預先指定時就被兩人使用)
+        const preoccupiedBedsMap = new Map(); // bedKey -> patient
         for (const p of patients) {
             const isManual = p.is_manual_assigned || false;
             const rawSt = String(p.raw_status_bed || '').trim();
@@ -1514,7 +1549,7 @@ class BedAssignmentEngine {
             let w = String(p.assigned_ward || '').trim().replace('A', '');
             let b = String(p.assigned_bed || '').trim();
             if (!w || !b) {
-                const parsed = ExcelPatientParser.parsePreassignedBed(p.status_bed || '');
+                const parsed = typeof ExcelPatientParser !== 'undefined' ? ExcelPatientParser.parsePreassignedBed(p.status_bed || '') : null;
                 if (parsed) {
                     w = parsed.ward;
                     b = parsed.bedNum;
@@ -1523,15 +1558,50 @@ class BedAssignmentEngine {
             if (w && b) {
                 if (['192', '119', '129'].includes(w)) continue;
                 const bNorm = /^\d+$/.test(b) ? String(parseInt(b, 10)) : b;
-                preoccupiedBeds.add(`${w}_${bNorm}`);
+                const bedKey = `${w}_${bNorm}`;
+
+                if (preoccupiedBedsMap.has(bedKey)) {
+                    const prevP = preoccupiedBedsMap.get(bedKey);
+                    let keepPrev = true;
+                    if (!prevP.is_manual_assigned && p.is_manual_assigned) {
+                        keepPrev = false;
+                    }
+                    const winner = keepPrev ? prevP : p;
+                    const loser = keepPrev ? p : prevP;
+
+                    loser.is_assigned = false;
+                    loser.assigned_ward = '';
+                    loser.assigned_bed = '';
+                    loser.status_bed = '待排';
+                    loser.raw_status_bed = '';
+                    loser.is_manual_assigned = false;
+                    loser.is_bed_locked = false;
+                    delete loser.bed_lock_restore;
+
+                    preoccupiedBedsMap.set(bedKey, winner);
+                    logs.push(`⚠️ 名單衝突排除：病人「${loser.name}」與「${winner.name}」重複指定佔用床位【${w}-${bNorm}】，已保留給「${winner.name}」，並將「${loser.name}」釋出重新排床！`);
+                } else {
+                    preoccupiedBedsMap.set(bedKey, p);
+                }
             }
         }
+        const preoccupiedBeds = new Set(preoccupiedBedsMap.keys());
 
-        let pool = availableBeds.map(b => Object.assign({}, b));
-        for (const b of pool) {
-            if (b.category === '雙空' || b.is_double_empty) {
-                if (!b.twin_room_status) b.twin_room_status = 'both_empty';
+        let pool = [];
+        const seenPoolKeys = new Set();
+        for (const b of availableBeds) {
+            if (!b) continue;
+            const wNorm = String(b.ward).replace('A', '').trim();
+            const bNorm = /^\d+$/.test(b.bed_num) ? String(parseInt(b.bed_num, 10)) : String(b.bed_num).trim();
+            const bedKey = `${wNorm}_${bNorm}`;
+            if (seenPoolKeys.has(bedKey)) continue;
+            seenPoolKeys.add(bedKey);
+
+            const bCopy = Object.assign({}, b);
+            if (bCopy.category === '雙空' || bCopy.is_double_empty) {
+                if (!bCopy.twin_room_status) bCopy.twin_room_status = 'both_empty';
             }
+            pool.push(bCopy);
         }
 
         if (preoccupiedBeds.size > 0) {
@@ -1640,6 +1710,23 @@ class BedAssignmentEngine {
             p.assigned_ward = ward;
             p.assigned_bed = String(bNum);
             p.assigned_stage = stageName;
+            p._assigned_bed_obj = {
+                ward: matchedBed.ward,
+                bed_num: matchedBed.bed_num,
+                category: matchedBed.category,
+                is_co_pay: matchedBed.is_co_pay,
+                doctor_code: matchedBed.doctor_code,
+                clean_doc_code: matchedBed.clean_doc_code,
+                doctor_name: matchedBed.doctor_name,
+                is_isolation: matchedBed.is_isolation,
+                bed_type: matchedBed.bed_type,
+                is_single: matchedBed.is_single,
+                twin_partner: matchedBed.twin_partner,
+                is_double_empty: matchedBed.is_double_empty,
+                twin_room_status: matchedBed.twin_room_status,
+                locked_gender: matchedBed.locked_gender
+            };
+            p._is_borrow = Boolean(isBorrow);
             assignedCount++;
 
             const chartNo = String(p.chart_no || '').trim();
@@ -1672,6 +1759,271 @@ class BedAssignmentEngine {
 
             logs.push(`✓ [${stageName}] 已排入: ${p.name} (${p.gender || 'M'}) -> ${bedStrAssigned} [${matchedBed.category}] | ${docInfoLog}${yvNote}`);
         }
+
+        // 全部完成前空床清查：若全院仍有剩餘空床，檢查是否有符合未排定病人（包含無主病人或燈號不在名單者）可住的房型
+        const performFinalBedSweep = () => {
+            if (pool.length === 0) return;
+            const remPts = activePatients.filter(p => !p.is_assigned);
+            if (remPts.length === 0) return;
+
+            // 依優先順序排序待排病人：延後天數高者優先 -> 準時/急診 -> 隨機
+            const sortedRemPts = remPts.slice().sort((a, b) => {
+                let delayA = a.initial_delay_days;
+                if (delayA === undefined || delayA === null) {
+                    delayA = (typeof ExcelPatientParser !== 'undefined')
+                        ? ExcelPatientParser.extractDelayDays(a.raw_status_bed || a.status_bed || '')
+                        : 0;
+                }
+                let delayB = b.initial_delay_days;
+                if (delayB === undefined || delayB === null) {
+                    delayB = (typeof ExcelPatientParser !== 'undefined')
+                        ? ExcelPatientParser.extractDelayDays(b.raw_status_bed || b.status_bed || '')
+                        : 0;
+                }
+                if (delayA !== delayB) return delayB - delayA;
+
+                const prioA = isPriorityArrival(a) ? 0 : (BedAssignmentEngine.isErEicuPatient(a) ? 1 : 2);
+                const prioB = isPriorityArrival(b) ? 0 : (BedAssignmentEngine.isErEicuPatient(b) ? 1 : 2);
+                if (prioA !== prioB) return prioA - prioB;
+
+                const rA = (a._rand_tie !== undefined && a._rand_tie !== null) ? a._rand_tie : 0.0;
+                const rB = (b._rand_tie !== undefined && b._rand_tie !== null) ? b._rand_tie : 0.0;
+                return rA - rB;
+            });
+
+            logs.push(`\n🔍 【全部完成前檢查】清查全院剩餘空床 (${pool.length} 床) 與待排病人 (${sortedRemPts.length} 位) 是否有符合房型...`);
+
+            for (const p of sortedRemPts) {
+                if (p.is_assigned || pool.length === 0) continue;
+                const chartNo = String(p.chart_no || '').trim();
+                if (chartNo && assignedChartNos.has(chartNo)) continue;
+
+                const gender = p.gender || 'M';
+                const cleanDocCode = (p.doc_code || '').replace(/\D/g, '');
+                const [orderCriteria, allowCoPay] = this.parsePreference(this.getPatientEffectivePref(p));
+
+                let chosenBed = null;
+                for (const crit of orderCriteria) {
+                    const matchBeds = pool.filter(b => this.canPatientTakeBed(p, b) && this.bedMatchesCriterion(b, crit, gender, allowCoPay));
+                    if (matchBeds.length > 0) {
+                        // 排序候選床位：
+                        // 1. 符合常規借床規則者優先 (canDoctorBorrowBed)
+                        // 2. 有登錄主治醫師床位優先
+                        // 3. 雙空已用一床 (one_used) 優先
+                        // 4. 床號由小到大
+                        matchBeds.sort((a, b) => {
+                            const canBorrowA = (this.canPatientTakeBed(p, a) && this.canDoctorBorrowBed(cleanDocCode, a, p)) ? 0 : 1;
+                            const canBorrowB = (this.canPatientTakeBed(p, b) && this.canDoctorBorrowBed(cleanDocCode, b, p)) ? 0 : 1;
+                            if (canBorrowA !== canBorrowB) return canBorrowA - canBorrowB;
+
+                            const hasDocA = a.clean_doc_code ? 0 : 1;
+                            const hasDocB = b.clean_doc_code ? 0 : 1;
+                            if (hasDocA !== hasDocB) return hasDocA - hasDocB;
+
+                            const oneA = (a.category === '雙空' && a.twin_room_status === 'one_used') ? 0 : 1;
+                            const oneB = (b.category === '雙空' && b.twin_room_status === 'one_used') ? 0 : 1;
+                            if (oneA !== oneB) return oneA - oneB;
+
+                            return (parseInt(a.bed_num, 10) || 9999) - (parseInt(b.bed_num, 10) || 9999);
+                        });
+
+                        chosenBed = matchBeds[0];
+                        break;
+                    }
+                }
+
+                if (chosenBed) {
+                    const isOwn = Boolean(chosenBed.clean_doc_code && chosenBed.clean_doc_code === cleanDocCode);
+                    const isProxy = (proxyToLeaveDocs[cleanDocCode] || []).includes(chosenBed.clean_doc_code);
+                    const docInfo = isOwn
+                        ? `主治醫師本床(${chosenBed.doctor_name})`
+                        : `剩餘符合房型空床釋出(${chosenBed.doctor_name || chosenBed.ward})`;
+                    assignBedToPatient(p, chosenBed, !isOwn, isProxy, docInfo, "全部完成前空床清查分配");
+                }
+            }
+
+            // Phase 2: 連環調度 / 二分圖最佳轉移 (Augmenting Bipartite Re-matching)
+            // 若仍有未排定病人，且全院仍有空床，透過重組「借床病人」與「剩餘空床」進行全域最佳化轉移，救回延後病人
+            const remStill = activePatients.filter(p => !p.is_assigned);
+            if (remStill.length > 0 && pool.length > 0) {
+                const borrowPts = activePatients.filter(p => p.is_assigned && p._is_borrow && p._assigned_bed_obj);
+                if (borrowPts.length > 0) {
+                    const sweepPts = [...borrowPts, ...remStill];
+                    
+                    const sweepBedKeys = new Set();
+                    const sweepBeds = [];
+                    for (const b of [...pool, ...borrowPts.map(p => p._assigned_bed_obj)]) {
+                        if (!b) continue;
+                        const wNorm = String(b.ward).replace('A', '');
+                        const bNorm = /^\d+$/.test(b.bed_num) ? String(parseInt(b.bed_num, 10)) : String(b.bed_num);
+                        const bKey = `${wNorm}_${bNorm}`;
+                        if (sweepBedKeys.has(bKey)) continue;
+                        sweepBedKeys.add(bKey);
+                        sweepBeds.push(b);
+                    }
+                    
+                    // 雙空解鎖安全性：只有在雙空室之另一床也在 sweepBeds 中（或未被佔用）時才重置性別鎖定
+                    for (const b of sweepBeds) {
+                        if (b.category === '雙空' || b.is_double_empty) {
+                            const wNorm = String(b.ward).replace('A', '');
+                            const pNorm = (b.twin_partner !== undefined && b.twin_partner !== null)
+                                ? (/^\d+$/.test(b.twin_partner) ? String(parseInt(b.twin_partner, 10)) : String(b.twin_partner))
+                                : null;
+                            const partnerInSweep = pNorm && sweepBedKeys.has(`${wNorm}_${pNorm}`);
+                            if (partnerInSweep || !pNorm) {
+                                b.locked_gender = null;
+                                b.twin_room_status = 'both_empty';
+                            }
+                        }
+                    }
+
+                    const matching = this.solveBipartiteMatching(sweepPts, sweepBeds, manager, docHomeWards, proxyToLeaveDocs, youngVList);
+                    const matchCount = Object.keys(matching).length;
+                    
+                    // 只要新匹配人數大於原本借床人數（代表成功多救進病人，消除 delay），立即套用轉移！
+                    if (matchCount > borrowPts.length) {
+                        logs.push(`\n🔄 【全部完成前連環調度】偵測到全域轉移路徑！重組 ${borrowPts.length} 位借床病人與 ${pool.length} 張剩餘空床，成功將簽床數由 ${borrowPts.length} 提升至 ${matchCount} 床！`);
+                        
+                        // 先清空原本借床病人的分配
+                        for (const bp of borrowPts) {
+                            bp.is_assigned = false;
+                            bp.status_bed = '';
+                            bp.assigned_ward = '';
+                            bp.assigned_bed = '';
+                            assignedCount--;
+                            borrowedCount--;
+                        }
+
+                        // 重設 pool 為 sweepBeds
+                        pool.length = 0;
+                        pool.push(...sweepBeds);
+
+                        // 依據 matching 重新指派
+                        const matchedPairs = [];
+                        for (const [pIdx, bIdx] of Object.entries(matching)) {
+                            matchedPairs.push({ p: sweepPts[parseInt(pIdx, 10)], b: sweepBeds[parseInt(bIdx, 10)] });
+                        }
+
+                        for (const pair of matchedPairs) {
+                            const p = pair.p;
+                            const matchedBed = pair.b;
+                            if (!pool.includes(matchedBed)) continue;
+                            if (!this.canPatientTakeBed(p, matchedBed)) continue;
+
+                            const pClean = (p.doc_code || '').replace(/\D/g, '');
+                            const isOwn = (matchedBed.clean_doc_code === pClean);
+                            const isProxy = (proxyToLeaveDocs[pClean] || []).includes(matchedBed.clean_doc_code);
+                            let docInfo = "";
+                            if (isProxy) {
+                                docInfo = `代理請假醫師床位(${matchedBed.doctor_name})`;
+                            } else if (!isOwn) {
+                                const hWard = docHomeWards[pClean] || '';
+                                docInfo = (hWard && String(matchedBed.ward).replace('A', '') === hWard) ? `同病房借床(${matchedBed.doctor_name})` : `連環調度釋出床位(${matchedBed.doctor_name})`;
+                            } else {
+                                docInfo = `主治醫師本床(${matchedBed.doctor_name})`;
+                            }
+
+                            assignBedToPatient(p, matchedBed, !isOwn, isProxy, docInfo, "全部完成前連環轉移調度");
+                        }
+                    }
+                }
+            }
+        };
+
+        // 全域防呆機制：確保任何情況下，同一張實體床位絕不分配給兩位病人
+        const validateAndResolveDuplicateBeds = () => {
+            const bedToPatients = new Map();
+            for (const p of patients) {
+                if (!p.is_assigned) continue;
+                let w = String(p.assigned_ward || '').trim().replace('A', '');
+                let b = String(p.assigned_bed || '').trim();
+                if (!w || !b) {
+                    const parsed = typeof ExcelPatientParser !== 'undefined' ? ExcelPatientParser.parsePreassignedBed(p.status_bed || '') : null;
+                    if (parsed) {
+                        w = parsed.ward;
+                        b = parsed.bedNum;
+                    }
+                }
+                if (!w || !b || ['192', '119', '129'].includes(w)) continue;
+                const bNorm = /^\d+$/.test(b) ? String(parseInt(b, 10)) : b;
+                const key = `${w}_${bNorm}`;
+                if (!bedToPatients.has(key)) {
+                    bedToPatients.set(key, []);
+                }
+                bedToPatients.get(key).push(p);
+            }
+
+            for (const [key, ptsList] of bedToPatients.entries()) {
+                if (ptsList.length <= 1) continue;
+
+                // 發現同一張床有多位病人！進行優先級評比
+                ptsList.sort((a, b) => {
+                    if (Boolean(a.is_manual_assigned) !== Boolean(b.is_manual_assigned)) {
+                        return b.is_manual_assigned ? 1 : -1;
+                    }
+                    const aRaw = Boolean(a.raw_status_bed && !a.raw_status_bed.toLowerCase().includes('delay') && !['待排', '-', '無'].includes(a.raw_status_bed));
+                    const bRaw = Boolean(b.raw_status_bed && !b.raw_status_bed.toLowerCase().includes('delay') && !['待排', '-', '無'].includes(b.raw_status_bed));
+                    if (aRaw !== bRaw) return bRaw ? 1 : -1;
+                    const aDelay = a.initial_delay_days || 0;
+                    const bDelay = b.initial_delay_days || 0;
+                    if (bDelay !== aDelay) return bDelay - aDelay;
+                    return (patients.indexOf(a) - patients.indexOf(b));
+                });
+
+                const winner = ptsList[0];
+                const losers = ptsList.slice(1);
+                const [w, b] = key.split('_');
+
+                for (const loser of losers) {
+                    // 嘗試從剩餘 pool 中找一張符合 loser 意願與條件的床位
+                    let reassignedBed = null;
+                    for (let i = 0; i < pool.length; i++) {
+                        const cand = pool[i];
+                        if (!this.canPatientTakeBed(loser, cand)) continue;
+                        if (cand.category === '雙空' && cand.locked_gender && cand.locked_gender !== loser.gender) continue;
+                        if (loser.gender === 'F' && cand.category === '男2') continue;
+                        if (loser.gender === 'M' && cand.category === '女2') continue;
+                        const loserNormPref = String(loser.normalized_pref || '').trim() || BedAssignmentEngine.getNormalizedPreference(loser.bed_pref || '');
+                        const ok = BedAssignmentEngine.matchBedToPreference(cand, loserNormPref, loser.is_co_pay_confirmed || false);
+                        if (ok) {
+                            reassignedBed = cand;
+                            pool.splice(i, 1);
+                            break;
+                        }
+                    }
+
+                    if (reassignedBed) {
+                        const newWard = reassignedBed.ward;
+                        const newBedNum = reassignedBed.bed_num;
+                        loser.assigned_ward = newWard;
+                        loser.assigned_bed = String(newBedNum);
+                        const cleanDoc = (loser.doc_code || '').replace(/\D/g, '');
+                        const isOwn = reassignedBed.clean_doc_code === cleanDoc;
+                        const bedProxy = leaveDocToProxy[reassignedBed.clean_doc_code];
+                        const effCode = bedProxy || reassignedBed.clean_doc_code;
+                        loser.status_bed = isOwn ? `${newWard}-${newBedNum}` : (effCode ? `${newWard}-${newBedNum} (${effCode})` : `${newWard}-${newBedNum}`);
+                        logs.push(`🛡️【防呆調解】床位【${w}-${b}】同時分配給「${winner.name}」與「${loser.name}」。保留給「${winner.name}」，已將「${loser.name}」改配至替代空床【${loser.status_bed}】！`);
+                    } else {
+                        loser.is_assigned = false;
+                        loser.assigned_ward = '';
+                        loser.assigned_bed = '';
+                        let currDelay = loser.initial_delay_days;
+                        if (currDelay === undefined || currDelay === null) {
+                            currDelay = (typeof ExcelPatientParser !== 'undefined')
+                                ? ExcelPatientParser.extractDelayDays(loser.status_bed || '')
+                                : 0;
+                        }
+                        const nextDelay = (currDelay || 0) + 1;
+                        loser.status_bed = `delay ${nextDelay}`;
+                        assignedCount--;
+                        unassignedCount++;
+                        const cleanDocCode = (loser.doc_code || '').replace(/\D/g, '');
+                        if (cleanDocCode === this.DOC_1782) delayed1782Count++;
+                        logs.push(`🛡️【防呆調解】床位【${w}-${b}】同時分配給「${winner.name}」與「${loser.name}」。保留給「${winner.name}」，因無其他符合意願空床，「${loser.name}」設為【${loser.status_bed}】！`);
+                    }
+                }
+            }
+        };
 
         // 步驟 0: 純他科高級單人房病人 (1(192), 1(119), 1(129))
         const pureVipPatients = [];
@@ -1735,6 +2087,9 @@ class BedAssignmentEngine {
                 }
             }
 
+            // 全部完成前清查：檢查是否有剩餘空床符合待排病人房型
+            performFinalBedSweep();
+
             // 處理無法媒合者
             for (const p of activePatients) {
                 if (!p.is_assigned) {
@@ -1763,6 +2118,17 @@ class BedAssignmentEngine {
                         logs.push(`✗ 延後住院 (設為 ${p.status_bed}): ${p.name} (${p.gender}, 燈號:${p.doc_code}) 全院無可用床位`);
                     }
                 }
+            }
+
+            validateAndResolveDuplicateBeds();
+
+            for (const p of patients) {
+                delete p._assigned_bed_obj;
+                delete p._is_borrow;
+            }
+            for (const p of activePatients) {
+                delete p._assigned_bed_obj;
+                delete p._is_borrow;
             }
 
             return {
@@ -1801,7 +2167,8 @@ class BedAssignmentEngine {
                 const cDoc = (p.doc_code || '').replace(/\D/g, '');
                 const availCopay = pool.filter(b =>
                     this.bedMatchesCriterion(b, 'co_pay_2', gender, true) &&
-                    (b.clean_doc_code === cDoc || this.canDoctorBorrowBed(cDoc, b))
+                    this.canPatientTakeBed(p, b) &&
+                    (b.clean_doc_code === cDoc || this.canDoctorBorrowBed(cDoc, b, p))
                 );
                 if (availCopay.length > 0) {
                     availCopay.sort((a, b) => {
@@ -1829,8 +2196,10 @@ class BedAssignmentEngine {
             const remFemalePts = activePatients.filter(p => p.gender === 'F' && !p.is_assigned);
             const fixedMale = pool.filter(b => ['男2', '男4'].includes(b.category));
             const maleDeficit = Math.max(0, remMalePts.length - fixedMale.length);
+            const fixedFemale = pool.filter(b => ['女2', '女4'].includes(b.category));
+            const femaleDeficit = Math.max(0, remFemalePts.length - fixedFemale.length);
 
-            if (maleDeficit > 0 && fixedMale.length === 0) {
+            if (maleDeficit > 0 && femaleDeficit === 0 && fixedMale.length === 0) {
                 const fDocCodes = new Set(remFemalePts.map(p => (p.doc_code || '').replace(/\D/g, '')));
                 const candidateTwinRooms = {};
                 for (const b of pool) {
@@ -1924,7 +2293,9 @@ class BedAssignmentEngine {
             let matchedBed = null;
             for (const crit of orderCriteria) {
                 const ownBeds = pool.filter(b =>
-                    eligibleBedDoctors.has(b.clean_doc_code) && this.bedMatchesCriterion(b, crit, gender, allowCoPay)
+                    eligibleBedDoctors.has(b.clean_doc_code) &&
+                    this.canPatientTakeBed(p, b) &&
+                    this.bedMatchesCriterion(b, crit, gender, allowCoPay)
                 );
                 if (ownBeds.length > 0) {
                     ownBeds.sort((a, b) => {
@@ -1965,7 +2336,8 @@ class BedAssignmentEngine {
                     const sameWardBeds = pool.filter(b =>
                         String(b.ward).replace('A', '') === targetWard &&
                         b.clean_doc_code !== cleanDocCode &&
-                        this.canDoctorBorrowBed(cleanDocCode, b) &&
+                        this.canPatientTakeBed(p, b) &&
+                        this.canDoctorBorrowBed(cleanDocCode, b, p) &&
                         this.bedMatchesCriterion(b, crit, gender, allowCoPay)
                     );
                     if (sameWardBeds.length > 0) {
@@ -2009,7 +2381,8 @@ class BedAssignmentEngine {
                     const homeBeds = pool.filter(b =>
                         String(b.ward).replace('A', '') === homeWard &&
                         b.clean_doc_code !== cleanDocCode &&
-                        this.canDoctorBorrowBed(cleanDocCode, b) &&
+                        this.canPatientTakeBed(p, b) &&
+                        this.canDoctorBorrowBed(cleanDocCode, b, p) &&
                         this.bedMatchesCriterion(b, crit, gender, allowCoPay)
                     );
                     if (homeBeds.length > 0) {
@@ -2047,7 +2420,8 @@ class BedAssignmentEngine {
                 if (!matchedBed) {
                     const crossBeds = pool.filter(b =>
                         b.clean_doc_code !== cleanDocCode &&
-                        this.canDoctorBorrowBed(cleanDocCode, b) &&
+                        this.canPatientTakeBed(p, b) &&
+                        this.canDoctorBorrowBed(cleanDocCode, b, p) &&
                         this.bedMatchesCriterion(b, crit, gender, allowCoPay)
                     );
                     if (crossBeds.length > 0) {
@@ -2242,6 +2616,9 @@ class BedAssignmentEngine {
                 }
             }
 
+            // 全部完成前清查：檢查是否有剩餘空床符合待排病人房型
+            performFinalBedSweep();
+
             for (const p of activePatients) {
                 if (!p.is_assigned) {
                     const normPref = String(p.normalized_pref || '').trim() || this.getNormalizedPreference(p.bed_pref || '');
@@ -2269,6 +2646,17 @@ class BedAssignmentEngine {
                         logs.push(`✗ 延後住院 (設為 ${p.status_bed}): ${p.name} (${p.gender || 'M'}, 燈號:${p.doc_code}) 全院無可用床位`);
                     }
                 }
+            }
+
+            validateAndResolveDuplicateBeds();
+
+            for (const p of patients) {
+                delete p._assigned_bed_obj;
+                delete p._is_borrow;
+            }
+            for (const p of activePatients) {
+                delete p._assigned_bed_obj;
+                delete p._is_borrow;
             }
 
             return {
@@ -2350,6 +2738,9 @@ class BedAssignmentEngine {
             }
         }
 
+        // 全部完成前清查：檢查是否有剩餘空床符合待排病人房型
+        performFinalBedSweep();
+
         // 處理未排定者 (VIP 或 標記 delay)
         for (const p of activePatients) {
             if (!p.is_assigned) {
@@ -2378,6 +2769,18 @@ class BedAssignmentEngine {
                     logs.push(`✗ 延後住院 (設為 ${p.status_bed}): ${p.name} (${p.gender || 'M'}, 燈號:${p.doc_code}) 全院無可用床位`);
                 }
             }
+        }
+
+        validateAndResolveDuplicateBeds();
+
+        // 清理內部暫存屬性，確保回傳之病人資料為純淨 JSON 物件，絕不產生循環參照
+        for (const p of patients) {
+            delete p._assigned_bed_obj;
+            delete p._is_borrow;
+        }
+        for (const p of activePatients) {
+            delete p._assigned_bed_obj;
+            delete p._is_borrow;
         }
 
         return {
@@ -2416,12 +2819,18 @@ class BedAssignmentEngine {
         const ratioB = assignedB > 0 ? (ownB / assignedB) : 0.0;
 
         let winB = false;
-        if (ratioB > ratioA + 1e-6) {
+        // 核心原則：優先極大化簽床人數（減少 delay 延後人數）！
+        if (assignedB > assignedA) {
             winB = true;
-        } else if (Math.abs(ratioB - ratioA) <= 1e-6) {
+        } else if (assignedA > assignedB) {
+            winB = false;
+        } else {
+            // 排定人數相同時，比較主治醫師本床數與本床率
             if (ownB > ownA) {
                 winB = true;
-            } else if (ownB === ownA && assignedB > assignedA) {
+            } else if (ownA > ownB) {
+                winB = false;
+            } else if (ratioB > ratioA + 1e-6) {
                 winB = true;
             }
         }
@@ -2433,6 +2842,8 @@ class BedAssignmentEngine {
 
         for (let i = 0; i < patients.length; i++) {
             Object.assign(patients[i], winnerPatients[i]);
+            delete patients[i]._assigned_bed_obj;
+            delete patients[i]._is_borrow;
         }
 
         const banner = [
@@ -2481,6 +2892,19 @@ class BedAssignmentEngine {
         const pts4 = JSON.parse(JSON.stringify(patients));
         const beds4 = JSON.parse(JSON.stringify(availableBeds));
         const rep4 = this._simulateAssignment(pts4, beds4, manager, 'bipartite_after_step2');
+
+        const cleanPts = (pts) => {
+            if (!pts) return;
+            for (const p of pts) {
+                delete p._assigned_bed_obj;
+                delete p._is_borrow;
+            }
+        };
+        cleanPts(pts1);
+        cleanPts(pts2);
+        cleanPts(pts3);
+        cleanPts(pts4);
+        cleanPts(patients);
 
         return {
             original: {
@@ -2821,6 +3245,7 @@ class AIPromptGenerator {
    - 1772 不能借 124 病房的任何床位。
    - 1782 不能借 121 病房的任何床位。
    - 1782 的專屬床位不借給非 124 醫師。
+   - 【1705 醫師床位限制】：1705 的床位不能給急診的無主或空白主治醫師的病人。
    - 【雙空床位借床規則】：
      1) 兩床皆空時原則上不借床，若所屬主治醫師沒有剛好適合該床位的病人則保留供後續使用。
      2) 當雙空的其中一床已被使用，同房另一床亦可被使用！但必須安排同性別病人。優先安排該床位主治醫師本人的同性別病人；若該主治醫師無符合病人，後續步驟亦允許其他醫師借床（限同性別）。
